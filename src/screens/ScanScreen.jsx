@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Screen from "../components/Screen";
 import BigButton from "../components/BigButton";
 import CameraView from "../components/CameraView";
@@ -6,6 +6,7 @@ import { useApp } from "../contexts/AppContext";
 import { useVoice } from "../contexts/VoiceContext";
 import { useWardrobe } from "../contexts/WardrobeContext";
 import { detectClothing } from "../services/clothingDetection";
+import { uploadClothingImage } from "../utils/storage";
 import { SCREENS, C, FONT } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
 
@@ -13,9 +14,10 @@ export default function ScanScreen() {
   const { navigate } = useApp();
   const { speak } = useVoice();
   const { addItem } = useWardrobe();
-  const [phase, setPhase] = useState("camera"); // camera | loading | result
+  const [phase, setPhase] = useState("camera"); // camera | loading | result | saving
   const [result, setResult] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
+  const capturedBase64Ref = useRef(null);
 
   useEffect(() => {
     if (phase === "camera") {
@@ -26,6 +28,7 @@ export default function ScanScreen() {
   const handleCapture = useCallback(async (base64, dataUrl) => {
     setPhase("loading");
     setPreviewUrl(dataUrl);
+    capturedBase64Ref.current = base64;
     speak(RESPONSES.scanning);
 
     try {
@@ -39,20 +42,38 @@ export default function ScanScreen() {
     }
   }, [speak]);
 
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
     if (!result) return;
-    addItem({
-      name: result.name,
-      type: result.type,
-      category: result.category,
-      color: result.color,
-      colorDescription: result.colorDescription,
-      pattern: result.pattern,
-      gender: result.gender,
-      description: result.description,
-    });
-    speak(RESPONSES.saved(result.name));
-    setTimeout(() => navigate(SCREENS.WARDROBE), 1500);
+    setPhase("saving");
+
+    let imageUrl = null;
+    try {
+      if (capturedBase64Ref.current) {
+        imageUrl = await uploadClothingImage(capturedBase64Ref.current);
+      }
+    } catch (err) {
+      console.warn("Image upload failed, saving without image:", err);
+    }
+
+    try {
+      await addItem({
+        name: result.name,
+        type: result.type,
+        category: result.category,
+        color: result.color,
+        colorDescription: result.colorDescription,
+        pattern: result.pattern,
+        gender: result.gender,
+        description: result.description,
+        imageUrl,
+      });
+      speak(RESPONSES.saved(result.name));
+      setTimeout(() => navigate(SCREENS.WARDROBE), 1500);
+    } catch (err) {
+      console.error("Failed to save item:", err);
+      speak(RESPONSES.error);
+      setPhase("result");
+    }
   }, [result, addItem, speak, navigate]);
 
   const handleDiscard = useCallback(() => {
@@ -62,20 +83,36 @@ export default function ScanScreen() {
     setPhase("camera");
   }, [speak]);
 
-  const handleOutfitHelp = useCallback(() => {
+  const handleOutfitHelp = useCallback(async () => {
     if (!result) return;
-    addItem({
-      name: result.name,
-      type: result.type,
-      category: result.category,
-      color: result.color,
-      colorDescription: result.colorDescription,
-      pattern: result.pattern,
-      gender: result.gender,
-      description: result.description,
-    });
-    navigate(SCREENS.OUTFIT, { anchorItem: result });
-  }, [result, addItem, navigate]);
+
+    let imageUrl = null;
+    try {
+      if (capturedBase64Ref.current) {
+        imageUrl = await uploadClothingImage(capturedBase64Ref.current);
+      }
+    } catch {
+      // Non-blocking
+    }
+
+    try {
+      await addItem({
+        name: result.name,
+        type: result.type,
+        category: result.category,
+        color: result.color,
+        colorDescription: result.colorDescription,
+        pattern: result.pattern,
+        gender: result.gender,
+        description: result.description,
+        imageUrl,
+      });
+      navigate(SCREENS.OUTFIT, { anchorItem: result });
+    } catch (err) {
+      console.error("Failed to save item:", err);
+      speak(RESPONSES.error);
+    }
+  }, [result, addItem, navigate, speak]);
 
   if (phase === "camera") {
     return (
@@ -85,9 +122,11 @@ export default function ScanScreen() {
     );
   }
 
-  if (phase === "loading") {
+  if (phase === "loading" || phase === "saving") {
+    const title = phase === "saving" ? "Saving..." : "Scanning...";
+    const subtitle = phase === "saving" ? "Saving to your wardrobe." : "Analyzing your clothing item.";
     return (
-      <Screen title="Scanning..." subtitle="Analyzing your clothing item.">
+      <Screen title={title} subtitle={subtitle}>
         {previewUrl && (
           <img
             src={previewUrl}

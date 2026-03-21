@@ -1,9 +1,11 @@
 import { useCallback } from "react";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { AppProvider, useApp } from "./contexts/AppContext";
 import { WardrobeProvider } from "./contexts/WardrobeContext";
 import { VoiceProvider, useVoice } from "./contexts/VoiceContext";
 import { useAnnounce } from "./components/LiveRegions";
 import VoiceStatus from "./components/VoiceStatus";
+import AuthScreen from "./screens/AuthScreen";
 import HomeScreen from "./screens/HomeScreen";
 import ScanScreen from "./screens/ScanScreen";
 import WardrobeScreen from "./screens/WardrobeScreen";
@@ -110,12 +112,55 @@ function AppShell() {
   );
 }
 
-export default function App() {
+function AuthGate() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div style={{
+        width: "100%", maxWidth: 430, margin: "0 auto",
+        height: "100vh", background: C.bg,
+        display: "flex", flexDirection: "column",
+        alignItems: "center", justifyContent: "center",
+        fontFamily: FONT,
+      }}>
+        <div style={{
+          width: 48, height: 48, borderRadius: "50%",
+          border: `4px solid ${C.focus}`,
+          borderTopColor: "transparent",
+          animation: "spin 0.8s linear infinite",
+        }} />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div style={{
+        width: "100%", maxWidth: 430, margin: "0 auto",
+        height: "100vh", background: C.bg,
+        display: "flex", flexDirection: "column",
+        fontFamily: FONT, overflow: "hidden",
+      }}>
+        <AuthScreen />
+      </div>
+    );
+  }
+
   return (
     <AppProvider>
       <WardrobeProvider>
         <AppShell />
       </WardrobeProvider>
     </AppProvider>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AuthGate />
+    </AuthProvider>
   );
 }

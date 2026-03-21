@@ -9,7 +9,7 @@ import { SCREENS, C, FONT, CATEGORIES } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
 
 export default function WardrobeScreen() {
-  const { items, removeItem, removeLast } = useWardrobe();
+  const { items, loading, removeItem, removeLast } = useWardrobe();
   const { speak } = useVoice();
   const { navigate } = useApp();
   const [filter, setFilter] = useState(null);
@@ -55,6 +55,22 @@ export default function WardrobeScreen() {
     window.addEventListener("voiceCommand", handler);
     return () => window.removeEventListener("voiceCommand", handler);
   }, [readAll]);
+
+  if (loading) {
+    return (
+      <Screen title="My Wardrobe" subtitle="Loading your items...">
+        <div style={{ display: "flex", justifyContent: "center", padding: 60 }}>
+          <div style={{
+            width: 48, height: 48, borderRadius: "50%",
+            border: `4px solid ${C.focus}`,
+            borderTopColor: "transparent",
+            animation: "spin 0.8s linear infinite",
+          }} />
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      </Screen>
+    );
+  }
 
   if (items.length === 0) {
     return (

@@ -3,12 +3,14 @@ import Screen from "../components/Screen";
 import BigButton from "../components/BigButton";
 import MicButton from "../components/MicButton";
 import { useApp } from "../contexts/AppContext";
+import { useAuth } from "../contexts/AuthContext";
 import { useVoice } from "../contexts/VoiceContext";
 import { SCREENS } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
 
 export default function HomeScreen() {
   const { navigate } = useApp();
+  const { signOut } = useAuth();
   const { speak, isListening, toggleListening } = useVoice();
 
   useEffect(() => {
@@ -73,6 +75,16 @@ export default function HomeScreen() {
               onClick={() => navigate(SCREENS.MIRROR)}
             />
           </div>
+        </div>
+
+        <div style={{ marginTop: 24 }}>
+          <BigButton
+            label="Sign Out"
+            hint="Sign out of your account"
+            icon="→"
+            variant="danger"
+            onClick={signOut}
+          />
         </div>
       </div>
     </Screen>

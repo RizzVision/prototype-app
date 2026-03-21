@@ -1,7 +1,16 @@
+import { useState, useEffect } from "react";
 import { C, FONT } from "../utils/constants";
+import { getImageUrl } from "../utils/storage";
 
 export default function WardrobeCard({ item, onTap, onDelete }) {
   const desc = `${item.color} ${item.pattern || ""} ${item.type}`.trim();
+  const [thumbUrl, setThumbUrl] = useState(null);
+
+  useEffect(() => {
+    if (item.imageUrl) {
+      getImageUrl(item.imageUrl).then(url => setThumbUrl(url));
+    }
+  }, [item.imageUrl]);
 
   return (
     <div style={{
@@ -30,6 +39,16 @@ export default function WardrobeCard({ item, onTap, onDelete }) {
           WebkitTapHighlightColor: "rgba(255,214,0,0.2)",
         }}
       >
+        {thumbUrl && (
+          <img
+            src={thumbUrl}
+            alt={item.name}
+            style={{
+              width: 48, height: 48, borderRadius: 10,
+              objectFit: "cover", flexShrink: 0,
+            }}
+          />
+        )}
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 700 }}>{item.name}</div>
           <div style={{ fontSize: 14, color: C.muted, marginTop: 4 }}>{desc}</div>

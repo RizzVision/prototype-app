@@ -1,2 +1,10 @@
 # Ignore node_modules directory
 node_modules/
+/src/generated/prisma
+
+# Environment variables
+.env
+.env.local
+
+# Prisma migrations (managed per-environment)
+prisma/migrations/
