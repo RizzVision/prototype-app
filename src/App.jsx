@@ -1,0 +1,121 @@
+import { useCallback } from "react";
+import { AppProvider, useApp } from "./contexts/AppContext";
+import { WardrobeProvider } from "./contexts/WardrobeContext";
+import { VoiceProvider, useVoice } from "./contexts/VoiceContext";
+import { useAnnounce } from "./components/LiveRegions";
+import VoiceStatus from "./components/VoiceStatus";
+import HomeScreen from "./screens/HomeScreen";
+import ScanScreen from "./screens/ScanScreen";
+import WardrobeScreen from "./screens/WardrobeScreen";
+import OutfitScreen from "./screens/OutfitScreen";
+import ShoppingScreen from "./screens/ShoppingScreen";
+import MirrorScreen from "./screens/MirrorScreen";
+import { SCREENS, C, FONT } from "./utils/constants";
+
+function ScreenRouter() {
+  const { screen } = useApp();
+
+  switch (screen) {
+    case SCREENS.HOME:     return <HomeScreen />;
+    case SCREENS.SCAN:     return <ScanScreen />;
+    case SCREENS.WARDROBE: return <WardrobeScreen />;
+    case SCREENS.OUTFIT:   return <OutfitScreen />;
+    case SCREENS.SHOPPING: return <ShoppingScreen />;
+    case SCREENS.MIRROR:   return <MirrorScreen />;
+    default:               return <HomeScreen />;
+  }
+}
+
+function StatusIndicator() {
+  const { isListening, isSpeaking } = useVoice();
+  return <VoiceStatus isListening={isListening} isSpeaking={isSpeaking} />;
+}
+
+function BackButton() {
+  const { screen, canGoBack, goBack } = useApp();
+  const isFullScreen = screen === SCREENS.SCAN || screen === SCREENS.SHOPPING || screen === SCREENS.MIRROR;
+
+  if (!canGoBack) return null;
+
+  if (isFullScreen) {
+    return (
+      <button
+        onClick={goBack}
+        aria-label="Go back to previous screen"
+        style={{
+          position: "absolute", top: 16, left: 16, zIndex: 50,
+          background: "rgba(0,0,0,0.6)",
+          border: `2px solid ${C.border}`,
+          borderRadius: 14,
+          color: C.text,
+          fontFamily: FONT,
+          fontSize: 16,
+          fontWeight: 700,
+          padding: "10px 18px",
+          cursor: "pointer",
+          display: "flex", alignItems: "center", gap: 8,
+        }}
+      >
+        <span aria-hidden>←</span> Back
+      </button>
+    );
+  }
+
+  return (
+    <div style={{ padding: "12px 20px 0", flexShrink: 0 }}>
+      <button
+        onClick={goBack}
+        aria-label="Go back to previous screen"
+        style={{
+          background: "transparent",
+          border: `2px solid ${C.border}`,
+          borderRadius: 14,
+          color: C.text,
+          fontFamily: FONT,
+          fontSize: 16,
+          fontWeight: 700,
+          padding: "10px 18px",
+          cursor: "pointer",
+          display: "flex", alignItems: "center", gap: 8,
+        }}
+      >
+        <span aria-hidden>←</span> Back
+      </button>
+    </div>
+  );
+}
+
+function AppShell() {
+  const { announce, LiveRegions } = useAnnounce();
+
+  const handleScreenCommand = useCallback((cmd) => {
+    window.dispatchEvent(new CustomEvent("voiceCommand", { detail: cmd }));
+  }, []);
+
+  return (
+    <VoiceProvider announce={announce} onScreenCommand={handleScreenCommand}>
+      <div style={{
+        width: "100%", maxWidth: 430, margin: "0 auto",
+        height: "100vh", background: C.bg,
+        display: "flex", flexDirection: "column",
+        fontFamily: FONT, overflow: "hidden",
+        position: "relative",
+      }}>
+        <LiveRegions />
+        <StatusIndicator />
+        <BackButton />
+        <ScreenRouter />
+      </div>
+    </VoiceProvider>
+  );
+}
+
+export default function App() {
+  return (
+    <AppProvider>
+      <WardrobeProvider>
+        <AppShell />
+      </WardrobeProvider>
+    </AppProvider>
+  );
+}
