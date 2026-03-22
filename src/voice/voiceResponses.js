@@ -19,6 +19,7 @@ export const RESPONSES = {
   mirrorReady: "Stand back and capture your full outfit. I will give you an honest assessment.",
   mirrorAnalyzing: "Analyzing your outfit.",
   noDetection: "No clothing detected. Please point the camera directly at a garment and try again.",
+  authRequired: "Your session expired. Please sign in again and retry.",
   backendUnavailable: "The detection server is unavailable. Please check your connection and try again.",
   error: "Something went wrong. Please try again.",
   cameraError: "Could not access camera. Please allow camera permission.",

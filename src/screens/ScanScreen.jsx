@@ -77,6 +77,8 @@ export default function ScanScreen() {
     } catch (err) {
       if (err.message === "NO_DETECTION") {
         speak(RESPONSES.noDetection);
+      } else if (err.message === "AUTH_REQUIRED") {
+        speak(RESPONSES.authRequired);
       } else if (err.message === "BACKEND_UNAVAILABLE") {
         speak(RESPONSES.backendUnavailable);
       } else {

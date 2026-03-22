@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import { Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { AppProvider, useApp } from "./contexts/AppContext";
 import { WardrobeProvider } from "./contexts/WardrobeContext";
@@ -6,6 +7,7 @@ import { VoiceProvider, useVoice } from "./contexts/VoiceContext";
 import { useAnnounce } from "./components/LiveRegions";
 import VoiceStatus from "./components/VoiceStatus";
 import AuthScreen from "./screens/AuthScreen";
+import AuthCallbackScreen from "./screens/AuthCallbackScreen";
 import HomeScreen from "./screens/HomeScreen";
 import ScanScreen from "./screens/ScanScreen";
 import WardrobeScreen from "./screens/WardrobeScreen";
@@ -162,7 +164,11 @@ function AuthGate() {
 export default function App() {
   return (
     <AuthProvider>
-      <AuthGate />
+      <Routes>
+        <Route path="/" element={<AuthGate />} />
+        <Route path="/auth/callback" element={<AuthCallbackScreen />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
     </AuthProvider>
   );
 }

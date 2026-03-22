@@ -1,13 +1,58 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import base64, io, os
+import httpx
 from PIL import Image
 from ultralytics import YOLO
 
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "RizzVision YOLOv8m Final.pt")
 model: YOLO | None = None
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
+AUTH_TIMEOUT_SECONDS = float(os.getenv("SUPABASE_AUTH_TIMEOUT_SECONDS", "5"))
+
+
+def _extract_bearer_token(authorization: str | None) -> str:
+    if not authorization:
+        raise HTTPException(401, "Missing authorization token")
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Invalid authorization header")
+
+    token = authorization.split(" ", 1)[1].strip()
+    if not token:
+        raise HTTPException(401, "Missing authorization token")
+    return token
+
+
+def _verify_supabase_user(authorization: str | None) -> str:
+    token = _extract_bearer_token(authorization)
+
+    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+        raise HTTPException(500, "Supabase auth verification is not configured")
+
+    try:
+        response = httpx.get(
+            f"{SUPABASE_URL}/auth/v1/user",
+            headers={
+                "apikey": SUPABASE_ANON_KEY,
+                "Authorization": f"Bearer {token}",
+            },
+            timeout=AUTH_TIMEOUT_SECONDS,
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(503, "Auth verification unavailable") from exc
+
+    if response.status_code != 200:
+        raise HTTPException(401, "Invalid or expired auth token")
+
+    user_data = response.json()
+    user_id = user_data.get("id")
+    if not user_id:
+        raise HTTPException(401, "Invalid or expired auth token")
+
+    return user_id
 
 
 @asynccontextmanager
@@ -57,7 +102,9 @@ def health():
 
 
 @app.post("/detect", response_model=DetectResponse)
-def detect(req: DetectRequest):
+def detect(req: DetectRequest, authorization: str | None = Header(default=None)):
+    _verify_supabase_user(authorization)
+
     if model is None:
         raise HTTPException(503, "Model not loaded")
     try:
