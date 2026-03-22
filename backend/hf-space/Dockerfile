@@ -2,6 +2,15 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Install system dependencies for OpenCV (required by ultralytics/YOLO)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libxcb1 \
+    libxrender1 \
+    libxext6 \
+    libsm6 \
+    libxkbcommon0 \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install CPU-only PyTorch first to avoid pulling the 2GB CUDA build
 RUN pip install --no-cache-dir \
     torch==2.5.1 \
