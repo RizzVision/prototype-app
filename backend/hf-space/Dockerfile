@@ -1,15 +1,12 @@
-FROM python:3.11-slim
+FROM python:3.11
 
 WORKDIR /app
 
 # Install system dependencies for OpenCV (required by ultralytics/YOLO)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1-mesa-glx \
-    libglib2.0-0 \
     libsm6 \
     libxext6 \
     libxrender-dev \
-    libxcb1 \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
