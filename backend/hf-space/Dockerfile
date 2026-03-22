@@ -4,11 +4,13 @@ WORKDIR /app
 
 # Install system dependencies for OpenCV (required by ultralytics/YOLO)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libxcb1 \
-    libxrender1 \
-    libxext6 \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
     libsm6 \
-    libxkbcommon0 \
+    libxext6 \
+    libxrender-dev \
+    libxcb1 \
+    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install CPU-only PyTorch first to avoid pulling the 2GB CUDA build
