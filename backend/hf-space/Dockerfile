@@ -4,6 +4,8 @@ WORKDIR /app
 
 # Install system dependencies for OpenCV (required by ultralytics/YOLO)
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    mesa-common-dev \
+    libgl1 \
     libsm6 \
     libxext6 \
     libxrender-dev \
