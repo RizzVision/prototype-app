@@ -19,6 +19,7 @@ export const SCREENS = {
   OUTFIT: "outfit",
   SHOPPING: "shopping",
   MIRROR: "mirror",
+  EDIT_ITEM: "editItem",
 };
 
 export const CATEGORIES = [

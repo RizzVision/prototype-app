@@ -8,6 +8,7 @@ export const RESPONSES = {
   wardrobeEmpty: "Your wardrobe is empty. Scan your first item to get started.",
   wardrobeCount: (n) => `You have ${n} item${n !== 1 ? "s" : ""} in your wardrobe.`,
   itemDeleted: (name) => `${name} deleted from your wardrobe.`,
+  itemUpdated: (name) => `${name} updated.`,
   noItemToDelete: "Your wardrobe is empty. Nothing to delete.",
   outfitPrompt: "What occasion are you dressing for?",
   moodPrompt: (occasion) => `${occasion}. What vibe are you going for?`,
