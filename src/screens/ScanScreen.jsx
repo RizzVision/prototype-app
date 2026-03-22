@@ -75,7 +75,13 @@ export default function ScanScreen() {
       setPhase("result");
       speak(RESPONSES.scanComplete(detected.description));
     } catch (err) {
-      speak(err.message === "NO_DETECTION" ? RESPONSES.noDetection : RESPONSES.error);
+      if (err.message === "NO_DETECTION") {
+        speak(RESPONSES.noDetection);
+      } else if (err.message === "BACKEND_UNAVAILABLE") {
+        speak(RESPONSES.backendUnavailable);
+      } else {
+        speak(RESPONSES.error);
+      }
       setPhase("camera");
     }
   }, [speak]);

@@ -18,11 +18,13 @@ export async function detectWithYolo(base64Image) {
       signal: controller.signal,
     });
     clearTimeout(timeout);
-    if (!res.ok) return null;
+    if (!res.ok) {
+      throw new Error("BACKEND_UNAVAILABLE");
+    }
     const data = await res.json();
     return data.detections ?? null;
-  } catch {
-    // Backend offline, timed out, or network error — signal absence to caller
-    return null;
+  } catch (err) {
+    if (err.name === "AbortError") throw new Error("BACKEND_UNAVAILABLE");
+    throw err;
   }
 }
