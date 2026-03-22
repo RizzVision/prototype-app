@@ -1,5 +1,11 @@
 import { supabase } from "../lib/supabase";
 
+const urlCache = new Map(); // path → { url, expiresAt }
+
+export function invalidateImageUrl(path) {
+  if (path) urlCache.delete(path);
+}
+
 export async function loadWardrobe() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
@@ -99,10 +105,53 @@ export async function uploadClothingImage(base64Data) {
   return fileName;
 }
 
+export async function updateWardrobeItem(id, updates) {
+  const dbUpdates = {};
+  if (updates.name !== undefined)        dbUpdates.name = updates.name;
+  if (updates.category !== undefined)    dbUpdates.category = updates.category;
+  if (updates.color !== undefined)       dbUpdates.color = updates.color;
+  if (updates.pattern !== undefined)     dbUpdates.pattern = updates.pattern;
+  if (updates.description !== undefined) dbUpdates.description = updates.description;
+
+  const { data, error } = await supabase
+    .from("wardrobe_items")
+    .update(dbUpdates)
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  return {
+    id: data.id,
+    name: data.name,
+    type: data.type,
+    category: data.category,
+    color: data.color,
+    colorDescription: data.color_description,
+    pattern: data.pattern,
+    gender: data.gender,
+    description: data.description,
+    imageUrl: data.image_url,
+    dateAdded: data.date_added,
+  };
+}
+
+export async function deleteClothingImage(path) {
+  if (!path) return;
+  const { error } = await supabase.storage.from("wardrobe-images").remove([path]);
+  if (error) console.warn("Failed to delete image from storage:", error);
+  invalidateImageUrl(path);
+}
+
 export async function getImageUrl(path) {
   if (!path) return null;
+  const cached = urlCache.get(path);
+  if (cached && cached.expiresAt > Date.now()) return cached.url;
   const { data } = await supabase.storage
     .from("wardrobe-images")
     .createSignedUrl(path, 3600);
-  return data?.signedUrl ?? null;
+  const url = data?.signedUrl ?? null;
+  if (url) urlCache.set(path, { url, expiresAt: Date.now() + 55 * 60 * 1000 });
+  return url;
 }

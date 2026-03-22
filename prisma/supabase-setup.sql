@@ -23,11 +23,20 @@ CREATE POLICY "Users can delete own items"
   ON wardrobe_items FOR DELETE
   USING (auth.uid() = user_id);
 
--- 4. Storage bucket for clothing images (private)
+-- 4. Enable REPLICA IDENTITY FULL so realtime DELETE events include all columns (e.g. image_url)
+ALTER TABLE wardrobe_items REPLICA IDENTITY FULL;
+
+-- 5. RLS policy — users can update their own items
+CREATE POLICY "Users can update own items"
+  ON wardrobe_items FOR UPDATE
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+-- 6. Storage bucket for clothing images (private)
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('wardrobe-images', 'wardrobe-images', false);
 
--- 5. Storage RLS — users upload/view/delete only in their own folder
+-- 7. Storage RLS — users upload/view/delete only in their own folder
 CREATE POLICY "Users can upload own images"
   ON storage.objects FOR INSERT
   WITH CHECK (

@@ -41,9 +41,13 @@ export default function WardrobeScreen() {
 
   const handleDelete = useCallback((id) => {
     const item = items.find(i => i.id === id);
-    removeItem(id);
+    removeItem(id, item?.imageUrl);
     if (item) speak(RESPONSES.itemDeleted(item.name));
   }, [items, removeItem, speak]);
+
+  const handleEdit = useCallback((item) => {
+    navigate(SCREENS.EDIT_ITEM, { item });
+  }, [navigate]);
 
   // Handle screen-specific voice commands forwarded from VoiceContext
   useEffect(() => {
@@ -128,6 +132,7 @@ export default function WardrobeScreen() {
             key={item.id}
             item={item}
             onTap={handleTap}
+            onEdit={handleEdit}
             onDelete={handleDelete}
           />
         ))}

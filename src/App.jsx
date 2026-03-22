@@ -12,6 +12,7 @@ import WardrobeScreen from "./screens/WardrobeScreen";
 import OutfitScreen from "./screens/OutfitScreen";
 import ShoppingScreen from "./screens/ShoppingScreen";
 import MirrorScreen from "./screens/MirrorScreen";
+import EditItemScreen from "./screens/EditItemScreen";
 import { SCREENS, C, FONT } from "./utils/constants";
 
 function ScreenRouter() {
@@ -24,6 +25,7 @@ function ScreenRouter() {
     case SCREENS.OUTFIT:   return <OutfitScreen />;
     case SCREENS.SHOPPING: return <ShoppingScreen />;
     case SCREENS.MIRROR:   return <MirrorScreen />;
+    case SCREENS.EDIT_ITEM: return <EditItemScreen />;
     default:               return <HomeScreen />;
   }
 }

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { C, FONT } from "../utils/constants";
 import { getImageUrl } from "../utils/storage";
 
-export default function WardrobeCard({ item, onTap, onDelete }) {
+export default function WardrobeCard({ item, onTap, onDelete, onEdit }) {
   const desc = `${item.color} ${item.pattern || ""} ${item.type}`.trim();
   const [thumbUrl, setThumbUrl] = useState(null);
 
@@ -55,17 +55,33 @@ export default function WardrobeCard({ item, onTap, onDelete }) {
         </div>
         <span aria-hidden style={{ fontSize: 22, color: C.muted }}>🔊</span>
       </button>
-      {onDelete && (
-        <button
-          onClick={() => onDelete(item.id)}
-          aria-label={`Delete ${item.name}`}
-          style={{
-            width: 48, height: 48, borderRadius: 14, flexShrink: 0,
-            background: "transparent", border: `2px solid ${C.danger}`,
-            color: C.danger, fontSize: 20, cursor: "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}
-        >✕</button>
+      {(onEdit || onDelete) && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
+          {onEdit && (
+            <button
+              onClick={() => onEdit(item)}
+              aria-label={`Edit ${item.name}`}
+              style={{
+                width: 48, height: 48, borderRadius: 14,
+                background: "transparent", border: `2px solid ${C.focus}`,
+                color: C.focus, fontSize: 18, cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}
+            >✎</button>
+          )}
+          {onDelete && (
+            <button
+              onClick={() => onDelete(item.id)}
+              aria-label={`Delete ${item.name}`}
+              style={{
+                width: 48, height: 48, borderRadius: 14,
+                background: "transparent", border: `2px solid ${C.danger}`,
+                color: C.danger, fontSize: 20, cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}
+            >✕</button>
+          )}
+        </div>
       )}
     </div>
   );
