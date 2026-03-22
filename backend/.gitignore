@@ -1,0 +1,11 @@
+# Model weights — tracked separately via Git LFS in HF Space repo
+models/*.pt
+models/*.onnx
+models/*.engine
+
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+runs/

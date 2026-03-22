@@ -1,6 +1,7 @@
 import { analyzeImage } from "./claudeApi";
+import { detectWithYolo } from "./yoloApi";
 
-const DETECTION_PROMPT = `You are a fashion assistant for visually impaired users. Analyze this clothing item photo and respond with ONLY valid JSON (no markdown, no backticks).
+const BASE_DETECTION_PROMPT = `You are a fashion assistant for visually impaired users. Analyze this clothing item photo and respond with ONLY valid JSON (no markdown, no backticks).
 
 Return this exact JSON structure:
 {
@@ -14,11 +15,41 @@ Return this exact JSON structure:
   "description": "A natural spoken description of this item. Two to three sentences. Describe the garment type, color using sensory language, and any notable details. This will be read aloud to a blind user."
 }`;
 
+/**
+ * Format YOLO detections into a context block for Claude.
+ * Only includes detections at or above 40% confidence.
+ */
+function buildYoloContext(detections) {
+  const confident = detections.filter((d) => d.confidence >= 0.4);
+  if (confident.length === 0) return null;
+
+  const lines = confident
+    .map((d) => `  - ${d.label} (confidence: ${Math.round(d.confidence * 100)}%)`)
+    .join("\n");
+
+  return `[YOLO_CONTEXT — use as ground truth for garment identification]
+The on-device detector identified:
+${lines}
+Use these labels to inform "type", "category", and "name". Fill color, pattern, gender, colorDescription, and description from the image itself.
+[END YOLO_CONTEXT]
+
+`;
+}
+
 export async function detectClothing(base64Image) {
-  const response = await analyzeImage(base64Image, DETECTION_PROMPT);
+  // Attempt fast local/remote YOLO detection first
+  const yoloDetections = await detectWithYolo(base64Image);
+
+  // Build prompt — enriched with YOLO context if available, plain otherwise
+  let prompt = BASE_DETECTION_PROMPT;
+  if (yoloDetections && yoloDetections.length > 0) {
+    const ctx = buildYoloContext(yoloDetections);
+    if (ctx) prompt = ctx + BASE_DETECTION_PROMPT;
+  }
+
+  const response = await analyzeImage(base64Image, prompt);
 
   try {
-    // Try to extract JSON from the response
     const jsonMatch = response.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error("No JSON found in response");
     return JSON.parse(jsonMatch[0]);
