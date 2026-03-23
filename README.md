@@ -19,12 +19,16 @@ If you are developing a production application, we recommend using TypeScript wi
 
 The app uses Supabase for authentication and requires both frontend and backend environment variables.
 
-1. Copy `.env.example` to `.env` and fill values.
-2. In Supabase Dashboard, go to Authentication > Providers > Google and enable Google login.
-3. Add authorized redirect URLs in Supabase:
+1. Create your local env file from `.env.local.example`:
+   - `cp .env.local.example .env.local`
+2. Create your production template from `.env.production.example` when preparing deploy:
+   - `cp .env.production.example .env.production`
+3. Keep `.env` as shared defaults only (the repo includes a minimal `.env.example`).
+4. In Supabase Dashboard, go to Authentication > Providers > Google and enable Google login.
+5. Add authorized redirect URLs in Supabase:
    - `http://localhost:5173/auth/callback` for local development
    - `https://<your-domain>/auth/callback` for production
-4. Set Authentication > URL Configuration > Site URL to your app domain.
+6. Set Authentication > URL Configuration > Site URL to your app domain.
 
 ### Required frontend env vars
 
