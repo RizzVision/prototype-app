@@ -12,3 +12,6 @@ node_modules/
 
 # Prisma migrations (managed per-environment)
 prisma/migrations/
+
+# Claude worktrees
+.claude/worktrees
