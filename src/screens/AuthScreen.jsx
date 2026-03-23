@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import Screen from "../components/Screen";
 import BigButton from "../components/BigButton";
 import { useAuth } from "../contexts/AuthContext";
@@ -28,6 +28,25 @@ export default function AuthScreen() {
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
 
   const isBusy = submitting || googleSubmitting;
+  const modeAnnouncerRef = useRef(null);
+
+  const handleToggle = () => {
+    const next = !isSignUp;
+    setIsSignUp(next);
+    setError(null);
+    setTimeout(() => {
+      if (modeAnnouncerRef.current) {
+        modeAnnouncerRef.current.textContent = "";
+        setTimeout(() => {
+          if (modeAnnouncerRef.current) {
+            modeAnnouncerRef.current.textContent = next
+              ? "Create Account form. Fill in your details to register."
+              : "Sign In form. Enter your credentials to access your account.";
+          }
+        }, 80);
+      }
+    }, 0);
+  };
 
   const mapAuthError = (message) => {
     if (!message) return "Something went wrong. Please try again.";
@@ -85,6 +104,13 @@ export default function AuthScreen() {
   };
 
   return (
+    <>
+    <div
+      ref={modeAnnouncerRef}
+      aria-live="polite"
+      aria-atomic="true"
+      style={{ position: "absolute", left: -9999, width: 1, height: 1, overflow: "hidden" }}
+    />
     <Screen
       title={isSignUp ? "Create Account" : "Welcome Back"}
       subtitle={isSignUp ? "Sign up to save your wardrobe." : "Sign in to access your wardrobe."}
@@ -173,6 +199,7 @@ export default function AuthScreen() {
         )}
 
         <BigButton
+          type="submit"
           label={submitting ? "Please wait..." : isSignUp ? "Sign Up" : "Sign In"}
           hint={isSignUp ? "Create a new account" : "Sign in to your account"}
           icon={isSignUp ? "✨" : "→"}
@@ -182,7 +209,8 @@ export default function AuthScreen() {
       </form>
 
       <button
-        onClick={() => { setIsSignUp(!isSignUp); setError(null); }}
+        type="button"
+        onClick={handleToggle}
         disabled={isBusy}
         aria-label={isSignUp ? "Switch to sign in" : "Switch to sign up"}
         style={{
@@ -202,5 +230,6 @@ export default function AuthScreen() {
         {isSignUp ? "Already have an account? Sign in" : "Don't have an account? Sign up"}
       </button>
     </Screen>
+    </>
   );
 }
