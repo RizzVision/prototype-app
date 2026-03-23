@@ -1,6 +1,6 @@
 import { C, FONT } from "../utils/constants";
 
-export default function BigButton({ label, hint, icon, onClick, variant = "default", disabled }) {
+export default function BigButton({ label, hint, icon, onClick, variant = "default", disabled, type = "button" }) {
   const bg = variant === "primary"  ? C.focus
            : variant === "success"  ? C.success
            : variant === "danger"   ? C.danger
@@ -9,6 +9,7 @@ export default function BigButton({ label, hint, icon, onClick, variant = "defau
 
   return (
     <button
+      type={type}
       onClick={onClick}
       disabled={disabled}
       aria-label={hint ? `${label}. ${hint}` : label}

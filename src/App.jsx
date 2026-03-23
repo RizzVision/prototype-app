@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { AppProvider, useApp } from "./contexts/AppContext";
@@ -16,6 +16,16 @@ import ShoppingScreen from "./screens/ShoppingScreen";
 import MirrorScreen from "./screens/MirrorScreen";
 import EditItemScreen from "./screens/EditItemScreen";
 import { SCREENS, C, FONT } from "./utils/constants";
+
+const SCREEN_TITLES = {
+  [SCREENS.HOME]:      "Home",
+  [SCREENS.SCAN]:      "Scan Clothing",
+  [SCREENS.WARDROBE]:  "My Wardrobe",
+  [SCREENS.OUTFIT]:    "Outfit Help",
+  [SCREENS.SHOPPING]:  "Shopping Mode",
+  [SCREENS.MIRROR]:    "Mirror",
+  [SCREENS.EDIT_ITEM]: "Edit Item",
+};
 
 function ScreenRouter() {
   const { screen } = useApp();
@@ -91,8 +101,48 @@ function BackButton() {
   );
 }
 
+function SkipLink() {
+  const [focused, setFocused] = useState(false);
+  return (
+    <a
+      href="#main"
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      style={{
+        position: focused ? "static" : "absolute",
+        left: focused ? "auto" : -9999,
+        background: C.focus,
+        color: "#000",
+        fontFamily: FONT,
+        fontWeight: 700,
+        fontSize: 16,
+        padding: "12px 20px",
+        zIndex: 200,
+        borderRadius: 8,
+        textDecoration: "none",
+        display: "block",
+      }}
+    >
+      Skip to main content
+    </a>
+  );
+}
+
 function AppShell() {
   const { announce, LiveRegions } = useAnnounce();
+  const { screen } = useApp();
+
+  // On every screen change: update document title, announce new screen, move focus to <main>
+  useEffect(() => {
+    const label = SCREEN_TITLES[screen] ?? "Rizzvision";
+    document.title = `${label} — Rizzvision`;
+    announce(label, "assertive");
+    // Small delay allows the new screen's DOM to render before focusing
+    const id = setTimeout(() => {
+      document.getElementById("main")?.focus();
+    }, 100);
+    return () => clearTimeout(id);
+  }, [screen, announce]);
 
   const handleScreenCommand = useCallback((cmd) => {
     window.dispatchEvent(new CustomEvent("voiceCommand", { detail: cmd }));
@@ -107,6 +157,7 @@ function AppShell() {
         fontFamily: FONT, overflow: "hidden",
         position: "relative",
       }}>
+        <SkipLink />
         <LiveRegions />
         <StatusIndicator />
         <BackButton />
@@ -128,13 +179,18 @@ function AuthGate() {
         alignItems: "center", justifyContent: "center",
         fontFamily: FONT,
       }}>
-        <div style={{
-          width: 48, height: 48, borderRadius: "50%",
-          border: `4px solid ${C.focus}`,
-          borderTopColor: "transparent",
-          animation: "spin 0.8s linear infinite",
-        }} />
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        <div role="status" aria-label="Loading, please wait">
+          <div
+            aria-hidden="true"
+            style={{
+              width: 48, height: 48, borderRadius: "50%",
+              border: `4px solid ${C.focus}`,
+              borderTopColor: "transparent",
+              animation: "spin 0.8s linear infinite",
+            }}
+          />
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
       </div>
     );
   }

@@ -30,7 +30,12 @@ export default function HomeScreen() {
           size={120}
         />
 
-        <div style={{ fontSize: 14, color: "#888", textAlign: "center", marginBottom: 8 }}>
+        <div
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          style={{ fontSize: 14, color: "#888", textAlign: "center", marginBottom: 8 }}
+        >
           {isListening ? "Listening — say a command" : "Tap to start listening"}
         </div>
 

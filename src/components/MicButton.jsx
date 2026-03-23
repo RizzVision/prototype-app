@@ -1,5 +1,8 @@
 import { C, FONT } from "../utils/constants";
 
+const prefersReducedMotion = typeof window !== "undefined"
+  && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
 export default function MicButton({ isListening, onClick, size = 120 }) {
   return (
     <button
@@ -20,7 +23,7 @@ export default function MicButton({ isListening, onClick, size = 120 }) {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        animation: isListening ? "pulse 1.5s ease infinite, ripple 1.5s ease infinite" : "none",
+        animation: (isListening && !prefersReducedMotion) ? "pulse 1.5s ease infinite, ripple 1.5s ease infinite" : "none",
         transition: "background 0.2s, border-color 0.2s",
         WebkitTapHighlightColor: "rgba(255,214,0,0.25)",
         flexShrink: 0,

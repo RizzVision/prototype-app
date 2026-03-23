@@ -180,15 +180,20 @@ export default function ScanScreen() {
             style={{ width: "100%", borderRadius: 16, marginBottom: 20, maxHeight: 300, objectFit: "cover" }}
           />
         )}
-        <div style={{
-          display: "flex", justifyContent: "center", padding: 40,
-        }}>
-          <div style={{
-            width: 48, height: 48, borderRadius: "50%",
-            border: `4px solid ${C.focus}`,
-            borderTopColor: "transparent",
-            animation: "spin 0.8s linear infinite",
-          }} />
+        <div
+          role="status"
+          aria-label={phase === "saving" ? "Saving to your wardrobe" : "Scanning clothing item"}
+          style={{ display: "flex", justifyContent: "center", padding: 40 }}
+        >
+          <div
+            aria-hidden="true"
+            style={{
+              width: 48, height: 48, borderRadius: "50%",
+              border: `4px solid ${C.focus}`,
+              borderTopColor: "transparent",
+              animation: "spin 0.8s linear infinite",
+            }}
+          />
           <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </div>
       </Screen>
