@@ -26,7 +26,7 @@ function reducer(state, action) {
     case "SET_ITEMS":
       return { ...state, items: action.items, loading: false, error: null };
     case "ADD_ITEM":
-      return { ...state, items: [...state.items, action.item] };
+      return { ...state, items: [action.item, ...state.items] };
     case "REMOVE_ITEM":
       return { ...state, items: state.items.filter(i => i.id !== action.id) };
     case "UPSERT_ITEM": {

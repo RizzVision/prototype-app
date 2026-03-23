@@ -32,11 +32,15 @@ CREATE POLICY "Users can update own items"
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
 
--- 6. Storage bucket for clothing images (private)
-INSERT INTO storage.buckets (id, name, public)
-VALUES ('wardrobe-images', 'wardrobe-images', false);
+-- 6. Enable Realtime for wardrobe_items (required for postgres_changes subscriptions)
+ALTER PUBLICATION supabase_realtime ADD TABLE wardrobe_items;
 
--- 7. Storage RLS — users upload/view/delete only in their own folder
+-- 7. Storage bucket for clothing images (private)
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('wardrobe-images', 'wardrobe-images', false)
+ON CONFLICT (id) DO NOTHING;
+
+-- 8. Storage RLS — users upload/view/delete only in their own folder
 CREATE POLICY "Users can upload own images"
   ON storage.objects FOR INSERT
   WITH CHECK (
