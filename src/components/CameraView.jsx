@@ -1,11 +1,13 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import { C, FONT } from "../utils/constants";
 
-export default function CameraView({ onCapture, onError, autoCapture = false, captureInterval = 4000 }) {
+export default function CameraView({ onCapture, onError, autoCapture = false, captureInterval = 4000, guidanceMode = false, onGuidanceSample, captureRef }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  const guidanceCanvasRef = useRef(null);
   const streamRef = useRef(null);
   const intervalRef = useRef(null);
+  const guidanceIntervalRef = useRef(null);
   const facingModeRef = useRef("environment");
   const [ready, setReady] = useState(false);
   const [error, setError] = useState(null);
@@ -33,6 +35,7 @@ export default function CameraView({ onCapture, onError, autoCapture = false, ca
 
   const stopCamera = useCallback(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
+    if (guidanceIntervalRef.current) clearInterval(guidanceIntervalRef.current);
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(t => t.stop());
       streamRef.current = null;
@@ -67,6 +70,25 @@ export default function CameraView({ onCapture, onError, autoCapture = false, ca
     }
   }, [captureFrame, onCapture]);
 
+  const sampleGuidanceFrame = useCallback(() => {
+    if (!videoRef.current || !guidanceCanvasRef.current || !ready) return;
+    const video = videoRef.current;
+    const gc = guidanceCanvasRef.current;
+    gc.width  = Math.floor(video.videoWidth  / 2);
+    gc.height = Math.floor(video.videoHeight / 2);
+    const ctx = gc.getContext("2d");
+    ctx.drawImage(video, 0, 0, gc.width, gc.height);
+    const data = ctx.getImageData(0, 0, gc.width, gc.height).data;
+    let total = 0, count = 0;
+    for (let i = 0; i < data.length; i += 16) {
+      total += (data[i] + data[i + 1] + data[i + 2]) / 3;
+      count++;
+    }
+    const brightness = count > 0 ? total / count : 128;
+    const base64 = gc.toDataURL("image/jpeg", 0.4).split(",")[1];
+    if (onGuidanceSample) onGuidanceSample(base64, brightness, video.videoWidth, video.videoHeight);
+  }, [ready, onGuidanceSample]);
+
   useEffect(() => {
     startCamera();
     return stopCamera;
@@ -78,6 +100,17 @@ export default function CameraView({ onCapture, onError, autoCapture = false, ca
       return () => clearInterval(intervalRef.current);
     }
   }, [autoCapture, ready, handleCapture, captureInterval]);
+
+  useEffect(() => {
+    if (guidanceMode && ready) {
+      guidanceIntervalRef.current = setInterval(sampleGuidanceFrame, 3000);
+      return () => clearInterval(guidanceIntervalRef.current);
+    }
+  }, [guidanceMode, ready, sampleGuidanceFrame]);
+
+  useEffect(() => {
+    if (captureRef) captureRef.current = handleCapture;
+  }, [captureRef, handleCapture]);
 
   if (error) {
     return (
@@ -106,6 +139,7 @@ export default function CameraView({ onCapture, onError, autoCapture = false, ca
         }}
       />
       <canvas ref={canvasRef} style={{ display: "none" }} />
+      <canvas ref={guidanceCanvasRef} style={{ display: "none" }} />
 
       {/* Flip camera button — always visible when camera is ready */}
       <div style={{
@@ -133,7 +167,7 @@ export default function CameraView({ onCapture, onError, autoCapture = false, ca
         </button>
       </div>
 
-      {!autoCapture && (
+      {(!autoCapture || guidanceMode) && (
         <div style={{
           position: "absolute", bottom: 40, left: 0, right: 0,
           display: "flex", justifyContent: "center",
@@ -141,7 +175,7 @@ export default function CameraView({ onCapture, onError, autoCapture = false, ca
           <button
             onClick={handleCapture}
             disabled={!ready}
-            aria-label="Capture photo. Tap to scan clothing."
+            aria-label={guidanceMode ? "Capture photo. Tap to scan now, or wait for auto-capture." : "Capture photo. Tap to scan clothing."}
             style={{
               width: 88, height: 88, borderRadius: "50%",
               background: ready ? C.focus : C.surface,

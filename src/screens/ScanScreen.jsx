@@ -6,6 +6,7 @@ import { useApp } from "../contexts/AppContext";
 import { useVoice } from "../contexts/VoiceContext";
 import { useWardrobe } from "../contexts/WardrobeContext";
 import { detectClothing } from "../services/clothingDetection";
+import { detectWithYolo } from "../services/yoloApi";
 import { uploadClothingImage } from "../utils/storage";
 import { SCREENS, C, FONT } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
@@ -20,11 +21,138 @@ export default function ScanScreen() {
   const capturedBase64Ref = useRef(null);
   const canvasRef = useRef(null);
 
+  // Guidance mode state
+  const [guidanceMode, setGuidanceMode] = useState(true);
+  const [guidanceReady, setGuidanceReady] = useState(false);
+  const captureRef = useRef(null);
+  const countdownTimerRef = useRef(null);
+  const guidanceActiveRef = useRef(true);
+  const yoloGuidanceBusyRef = useRef(false);
+  const yoloUnavailableRef = useRef(false);
+  const lastSpokenRef = useRef({ msg: "", ts: 0 });
+  const DEBOUNCE_MS = 8000;
+
   useEffect(() => {
     if (phase === "camera") {
-      speak(RESPONSES.scanReady);
+      speak(guidanceMode
+        ? "Camera ready. Hold it still, I will guide you into position."
+        : RESPONSES.scanReady);
     }
-  }, [phase, speak]);
+  }, [phase, speak, guidanceMode]);
+
+  // Guidance: debounced speak
+  const speakGuidance = useCallback((msg) => {
+    const now = Date.now();
+    if (msg === lastSpokenRef.current.msg && now - lastSpokenRef.current.ts < DEBOUNCE_MS) return;
+    lastSpokenRef.current = { msg, ts: now };
+    speak(msg);
+  }, [speak]);
+
+  // Guidance: cancel auto-capture countdown
+  const cancelCountdown = useCallback(() => {
+    if (countdownTimerRef.current) { clearTimeout(countdownTimerRef.current); countdownTimerRef.current = null; }
+    setGuidanceReady(false);
+  }, []);
+
+  // Guidance: trigger capture programmatically
+  const triggerCapture = useCallback(() => {
+    if (!guidanceActiveRef.current) return;
+    guidanceActiveRef.current = false;
+    cancelCountdown();
+    setGuidanceMode(false);
+    if (captureRef.current) captureRef.current();
+  }, [cancelCountdown]);
+
+  // Guidance: 3-second countdown then auto-capture
+  const startCountdown = useCallback(() => {
+    speak(RESPONSES.guidance.goodPosition);
+    if (countdownTimerRef.current) clearTimeout(countdownTimerRef.current);
+    countdownTimerRef.current = setTimeout(() => {
+      if (!guidanceActiveRef.current) return;
+      speak(RESPONSES.guidance.countdown2);
+      countdownTimerRef.current = setTimeout(() => {
+        if (!guidanceActiveRef.current) return;
+        speak(RESPONSES.guidance.countdown1);
+        countdownTimerRef.current = setTimeout(() => {
+          if (!guidanceActiveRef.current) return;
+          triggerCapture();
+        }, 1000);
+      }, 1000);
+    }, 1000);
+  }, [speak, triggerCapture]);
+
+  // Guidance: process each sampled frame
+  const handleGuidanceSample = useCallback(async (base64, brightness, videoW, videoH) => {
+    if (!guidanceActiveRef.current) return;
+    if (yoloGuidanceBusyRef.current) return;
+
+    // Tier 1: brightness (instant, client-side)
+    if (brightness < 40)  { speakGuidance(RESPONSES.guidance.tooDark);  cancelCountdown(); return; }
+    if (brightness > 220) { speakGuidance(RESPONSES.guidance.tooBright); cancelCountdown(); return; }
+
+    // Tier 2: spatial framing via YOLO
+    if (yoloUnavailableRef.current) {
+      speakGuidance(RESPONSES.guidance.backendOnly);
+      return;
+    }
+    yoloGuidanceBusyRef.current = true;
+    let detections = null;
+    try {
+      detections = await Promise.race([
+        detectWithYolo(base64),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("GUIDANCE_TIMEOUT")), 3000)),
+      ]);
+    } catch {
+      yoloGuidanceBusyRef.current = false;
+      if (!guidanceActiveRef.current) return;
+      yoloUnavailableRef.current = true;
+      speakGuidance(RESPONSES.guidance.backendOnly);
+      return;
+    }
+    yoloGuidanceBusyRef.current = false;
+    if (!guidanceActiveRef.current) return;
+
+    if (!detections || detections.length === 0) {
+      cancelCountdown();
+      speakGuidance(RESPONSES.guidance.noClothing);
+      return;
+    }
+
+    const best = detections.reduce((a, b) => b.confidence > a.confidence ? b : a);
+    const [x1, y1, x2, y2] = best.box;
+    const areaRatio = ((x2 - x1) * (y2 - y1)) / (videoW * videoH);
+    const centerX = (x1 + x2) / 2 / videoW;
+    const centerY = (y1 + y2) / 2 / videoH;
+    const offsetX = centerX - 0.5;
+    const offsetY = centerY - 0.5;
+
+    if (areaRatio < 0.15) { cancelCountdown(); speakGuidance(RESPONSES.guidance.tooFar);   return; }
+    if (areaRatio > 0.80) { cancelCountdown(); speakGuidance(RESPONSES.guidance.tooClose);  return; }
+    if (Math.abs(offsetX) > 0.2) {
+      cancelCountdown();
+      speakGuidance(offsetX > 0 ? RESPONSES.guidance.moveLeft : RESPONSES.guidance.moveRight);
+      return;
+    }
+    if (Math.abs(offsetY) > 0.2) {
+      cancelCountdown();
+      speakGuidance(offsetY > 0 ? RESPONSES.guidance.moveUp : RESPONSES.guidance.moveDown);
+      return;
+    }
+
+    // All checks passed — start countdown if not already running
+    if (!guidanceReady) {
+      setGuidanceReady(true);
+      startCountdown();
+    }
+  }, [speakGuidance, guidanceReady, cancelCountdown, startCountdown]);
+
+  // Unmount cleanup
+  useEffect(() => {
+    return () => {
+      guidanceActiveRef.current = false;
+      if (countdownTimerRef.current) clearTimeout(countdownTimerRef.current);
+    };
+  }, []);
 
   // Draw image + bounding box onto canvas when result arrives
   useEffect(() => {
@@ -64,6 +192,9 @@ export default function ScanScreen() {
   }, [result, previewUrl]);
 
   const handleCapture = useCallback(async (base64, dataUrl) => {
+    guidanceActiveRef.current = false;
+    cancelCountdown();
+    setGuidanceMode(false);
     setPhase("loading");
     setPreviewUrl(dataUrl);
     capturedBase64Ref.current = base64;
@@ -86,7 +217,7 @@ export default function ScanScreen() {
       }
       setPhase("camera");
     }
-  }, [speak]);
+  }, [speak, cancelCountdown]);
 
   const handleSave = useCallback(async () => {
     if (!result) return;
@@ -126,6 +257,13 @@ export default function ScanScreen() {
     speak(RESPONSES.discarded);
     setResult(null);
     setPreviewUrl(null);
+    // Re-enable guidance for the next scan attempt
+    guidanceActiveRef.current = true;
+    yoloGuidanceBusyRef.current = false;
+    yoloUnavailableRef.current = false;
+    lastSpokenRef.current = { msg: "", ts: 0 };
+    setGuidanceMode(true);
+    setGuidanceReady(false);
     setPhase("camera");
   }, [speak]);
 
@@ -163,7 +301,13 @@ export default function ScanScreen() {
   if (phase === "camera") {
     return (
       <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-        <CameraView onCapture={handleCapture} onError={(msg) => speak(msg)} />
+        <CameraView
+          onCapture={handleCapture}
+          onError={(msg) => speak(msg)}
+          guidanceMode={guidanceMode}
+          onGuidanceSample={handleGuidanceSample}
+          captureRef={captureRef}
+        />
       </div>
     );
   }
