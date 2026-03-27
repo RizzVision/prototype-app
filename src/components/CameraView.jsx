@@ -70,6 +70,70 @@ export default function CameraView({ onCapture, onError, autoCapture = false, ca
     }
   }, [captureFrame, onCapture]);
 
+  const estimateSubjectBox = useCallback((data, width, height) => {
+    if (!data || !width || !height) return null;
+
+    const sampleStep = 4;
+    const borderPixels = [];
+    const pushPixel = (x, y) => {
+      const idx = (y * width + x) * 4;
+      borderPixels.push([data[idx], data[idx + 1], data[idx + 2]]);
+    };
+
+    for (let x = 0; x < width; x += sampleStep) {
+      pushPixel(x, 0);
+      pushPixel(x, height - 1);
+    }
+    for (let y = sampleStep; y < height - sampleStep; y += sampleStep) {
+      pushPixel(0, y);
+      pushPixel(width - 1, y);
+    }
+
+    if (borderPixels.length === 0) return null;
+
+    const background = borderPixels.reduce((acc, [r, g, b]) => {
+      acc.r += r;
+      acc.g += g;
+      acc.b += b;
+      return acc;
+    }, { r: 0, g: 0, b: 0 });
+    background.r /= borderPixels.length;
+    background.g /= borderPixels.length;
+    background.b /= borderPixels.length;
+
+    let minX = width;
+    let minY = height;
+    let maxX = -1;
+    let maxY = -1;
+    let activePixels = 0;
+
+    for (let y = 0; y < height; y += sampleStep) {
+      for (let x = 0; x < width; x += sampleStep) {
+        const idx = (y * width + x) * 4;
+        const r = data[idx];
+        const g = data[idx + 1];
+        const b = data[idx + 2];
+        const delta = Math.abs(r - background.r) + Math.abs(g - background.g) + Math.abs(b - background.b);
+        if (delta < 90) continue;
+        activePixels++;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+
+    if (activePixels < 120 || maxX <= minX || maxY <= minY) return null;
+
+    return {
+      x1: minX / width,
+      y1: minY / height,
+      x2: maxX / width,
+      y2: maxY / height,
+      confidence: Math.min(1, activePixels / ((width * height) / 18)),
+    };
+  }, []);
+
   const sampleGuidanceFrame = useCallback(() => {
     if (!videoRef.current || !guidanceCanvasRef.current || !ready) return;
     const video = videoRef.current;
@@ -86,8 +150,11 @@ export default function CameraView({ onCapture, onError, autoCapture = false, ca
     }
     const brightness = count > 0 ? total / count : 128;
     const base64 = gc.toDataURL("image/jpeg", 0.4).split(",")[1];
-    if (onGuidanceSample) onGuidanceSample(base64, brightness, video.videoWidth, video.videoHeight);
-  }, [ready, onGuidanceSample]);
+    const subjectBox = estimateSubjectBox(data, gc.width, gc.height);
+    if (onGuidanceSample) {
+      onGuidanceSample(base64, brightness, video.videoWidth, video.videoHeight, { subjectBox });
+    }
+  }, [ready, onGuidanceSample, estimateSubjectBox]);
 
   useEffect(() => {
     startCamera();

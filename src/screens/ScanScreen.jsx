@@ -31,6 +31,7 @@ export default function ScanScreen() {
   const yoloUnavailableRef = useRef(false);
   const lastSpokenRef = useRef({ msg: "", ts: 0 });
   const DEBOUNCE_MS = 8000;
+  const LOCAL_GUIDANCE_MIN_CONFIDENCE = 0.08;
 
   useEffect(() => {
     if (phase === "camera") {
@@ -81,8 +82,43 @@ export default function ScanScreen() {
     }, 1000);
   }, [speak, triggerCapture]);
 
+  const applyBoxGuidance = useCallback((box, source = "yolo") => {
+    if (!box || !guidanceActiveRef.current) return false;
+
+    const x1 = box.x1;
+    const y1 = box.y1;
+    const x2 = box.x2;
+    const y2 = box.y2;
+    const areaRatio = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+    const centerX = (x1 + x2) / 2;
+    const centerY = (y1 + y2) / 2;
+    const offsetX = centerX - 0.5;
+    const offsetY = centerY - 0.5;
+    const xThreshold = source === "local" ? 0.16 : 0.2;
+    const yThreshold = source === "local" ? 0.18 : 0.2;
+
+    if (areaRatio < 0.15) { cancelCountdown(); speakGuidance(RESPONSES.guidance.tooFar); return true; }
+    if (areaRatio > 0.8) { cancelCountdown(); speakGuidance(RESPONSES.guidance.tooClose); return true; }
+    if (Math.abs(offsetX) > xThreshold) {
+      cancelCountdown();
+      speakGuidance(offsetX > 0 ? RESPONSES.guidance.moveLeft : RESPONSES.guidance.moveRight);
+      return true;
+    }
+    if (Math.abs(offsetY) > yThreshold) {
+      cancelCountdown();
+      speakGuidance(offsetY > 0 ? RESPONSES.guidance.moveUp : RESPONSES.guidance.moveDown);
+      return true;
+    }
+
+    if (!guidanceReady) {
+      setGuidanceReady(true);
+      startCountdown();
+    }
+    return true;
+  }, [cancelCountdown, guidanceReady, speakGuidance, startCountdown]);
+
   // Guidance: process each sampled frame
-  const handleGuidanceSample = useCallback(async (base64, brightness, videoW, videoH) => {
+  const handleGuidanceSample = useCallback(async (base64, brightness, videoW, videoH, localGuidance = {}) => {
     if (!guidanceActiveRef.current) return;
     if (yoloGuidanceBusyRef.current) return;
 
@@ -90,8 +126,16 @@ export default function ScanScreen() {
     if (brightness < 40)  { speakGuidance(RESPONSES.guidance.tooDark);  cancelCountdown(); return; }
     if (brightness > 220) { speakGuidance(RESPONSES.guidance.tooBright); cancelCountdown(); return; }
 
+    const localBox = localGuidance.subjectBox;
+    const localConfidence = localBox?.confidence ?? 0;
+
     // Tier 2: spatial framing via YOLO
     if (yoloUnavailableRef.current) {
+      if (localBox && localConfidence >= LOCAL_GUIDANCE_MIN_CONFIDENCE) {
+        applyBoxGuidance(localBox, "local");
+        return;
+      }
+      cancelCountdown();
       speakGuidance(RESPONSES.guidance.backendOnly);
       return;
     }
@@ -106,6 +150,11 @@ export default function ScanScreen() {
       yoloGuidanceBusyRef.current = false;
       if (!guidanceActiveRef.current) return;
       yoloUnavailableRef.current = true;
+      if (localBox && localConfidence >= LOCAL_GUIDANCE_MIN_CONFIDENCE) {
+        applyBoxGuidance(localBox, "local");
+        return;
+      }
+      cancelCountdown();
       speakGuidance(RESPONSES.guidance.backendOnly);
       return;
     }
@@ -113,38 +162,23 @@ export default function ScanScreen() {
     if (!guidanceActiveRef.current) return;
 
     if (!detections || detections.length === 0) {
+      if (localBox && localConfidence >= LOCAL_GUIDANCE_MIN_CONFIDENCE) {
+        applyBoxGuidance(localBox, "local");
+        return;
+      }
       cancelCountdown();
       speakGuidance(RESPONSES.guidance.noClothing);
       return;
     }
 
     const best = detections.reduce((a, b) => b.confidence > a.confidence ? b : a);
-    const [x1, y1, x2, y2] = best.box;
-    const areaRatio = ((x2 - x1) * (y2 - y1)) / (videoW * videoH);
-    const centerX = (x1 + x2) / 2 / videoW;
-    const centerY = (y1 + y2) / 2 / videoH;
-    const offsetX = centerX - 0.5;
-    const offsetY = centerY - 0.5;
-
-    if (areaRatio < 0.15) { cancelCountdown(); speakGuidance(RESPONSES.guidance.tooFar);   return; }
-    if (areaRatio > 0.80) { cancelCountdown(); speakGuidance(RESPONSES.guidance.tooClose);  return; }
-    if (Math.abs(offsetX) > 0.2) {
-      cancelCountdown();
-      speakGuidance(offsetX > 0 ? RESPONSES.guidance.moveLeft : RESPONSES.guidance.moveRight);
-      return;
-    }
-    if (Math.abs(offsetY) > 0.2) {
-      cancelCountdown();
-      speakGuidance(offsetY > 0 ? RESPONSES.guidance.moveUp : RESPONSES.guidance.moveDown);
-      return;
-    }
-
-    // All checks passed — start countdown if not already running
-    if (!guidanceReady) {
-      setGuidanceReady(true);
-      startCountdown();
-    }
-  }, [speakGuidance, guidanceReady, cancelCountdown, startCountdown]);
+    applyBoxGuidance({
+      x1: best.box[0] / videoW,
+      y1: best.box[1] / videoH,
+      x2: best.box[2] / videoW,
+      y2: best.box[3] / videoH,
+    });
+  }, [speakGuidance, cancelCountdown, applyBoxGuidance]);
 
   // Unmount cleanup
   useEffect(() => {
