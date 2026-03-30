@@ -28,7 +28,6 @@ export default function ScanScreen() {
   const countdownTimerRef = useRef(null);
   const guidanceActiveRef = useRef(true);
   const yoloGuidanceBusyRef = useRef(false);
-  const yoloUnavailableRef = useRef(false);
   const lastSpokenRef = useRef({ msg: "", ts: 0 });
   const DEBOUNCE_MS = 8000;
   const LOCAL_GUIDANCE_MIN_CONFIDENCE = 0.08;
@@ -130,32 +129,21 @@ export default function ScanScreen() {
     const localConfidence = localBox?.confidence ?? 0;
 
     // Tier 2: spatial framing via YOLO
-    if (yoloUnavailableRef.current) {
-      if (localBox && localConfidence >= LOCAL_GUIDANCE_MIN_CONFIDENCE) {
-        applyBoxGuidance(localBox, "local");
-        return;
-      }
-      cancelCountdown();
-      speakGuidance(RESPONSES.guidance.backendOnly);
-      return;
-    }
     yoloGuidanceBusyRef.current = true;
     let detections = null;
     try {
       detections = await Promise.race([
         detectWithYolo(base64),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("GUIDANCE_TIMEOUT")), 3000)),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("GUIDANCE_TIMEOUT")), 6000)),
       ]);
     } catch {
       yoloGuidanceBusyRef.current = false;
       if (!guidanceActiveRef.current) return;
-      yoloUnavailableRef.current = true;
       if (localBox && localConfidence >= LOCAL_GUIDANCE_MIN_CONFIDENCE) {
         applyBoxGuidance(localBox, "local");
         return;
       }
-      cancelCountdown();
-      speakGuidance(RESPONSES.guidance.backendOnly);
+      // Silent fail — next cycle will retry
       return;
     }
     yoloGuidanceBusyRef.current = false;
