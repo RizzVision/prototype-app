@@ -31,8 +31,30 @@ const COMMANDS = [
 
   // Shopping / Mirror
   { patterns: ["pause", "stop scanning"], action: { type: "PAUSE_SCAN" } },
-  { patterns: ["resume", "continue", "start scanning"], action: { type: "RESUME_SCAN" } },
+  { patterns: ["resume", "start scanning"], action: { type: "RESUME_SCAN" } },
   { patterns: ["what should i change", "suggestions"], action: { type: "SUGGEST_CHANGES" } },
+
+  // Phase navigation & result reading
+  { patterns: ["next", "confirm"], action: { type: "CONFIRM" } },
+  { patterns: ["read result", "read again", "read analysis"], action: { type: "READ_RESULT" } },
+
+  // Occasion selection
+  { patterns: ["casual"],                       action: { type: "SELECT_OCCASION", id: "casual" } },
+  { patterns: ["work", "office"],               action: { type: "SELECT_OCCASION", id: "work" } },
+  { patterns: ["date night", "date"],           action: { type: "SELECT_OCCASION", id: "date" } },
+  { patterns: ["wedding"],                      action: { type: "SELECT_OCCASION", id: "wedding" } },
+  { patterns: ["festival"],                     action: { type: "SELECT_OCCASION", id: "festival" } },
+  { patterns: ["party"],                        action: { type: "SELECT_OCCASION", id: "party" } },
+  { patterns: ["gym", "active", "workout"],     action: { type: "SELECT_OCCASION", id: "gym" } },
+  { patterns: ["travel"],                       action: { type: "SELECT_OCCASION", id: "travel" } },
+
+  // Mood selection
+  { patterns: ["bold"],                         action: { type: "SELECT_MOOD", id: "bold" } },
+  { patterns: ["minimal", "minimalist"],        action: { type: "SELECT_MOOD", id: "minimal" } },
+  { patterns: ["romantic"],                     action: { type: "SELECT_MOOD", id: "romantic" } },
+  { patterns: ["edgy"],                         action: { type: "SELECT_MOOD", id: "edgy" } },
+  { patterns: ["earthy", "natural"],            action: { type: "SELECT_MOOD", id: "earthy" } },
+  { patterns: ["electric", "vibrant"],          action: { type: "SELECT_MOOD", id: "electric" } },
 ];
 
 export function parseCommand(transcript) {

@@ -18,6 +18,10 @@ export default function HomeScreen() {
     return () => clearTimeout(timer);
   }, [speak]);
 
+  useEffect(() => {
+    if (isListening) speak("Try: scan clothing, my wardrobe, outfit help, shopping mode, or mirror.");
+  }, [isListening, speak]);
+
   return (
     <Screen title="Rizzvision" subtitle="Your fashion assistant. Tap or speak.">
       <div style={{

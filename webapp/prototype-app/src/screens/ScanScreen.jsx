@@ -30,6 +30,17 @@ function scoreColor(score) {
   return C.danger;
 }
 
+function inferCategory(label) {
+  if (!label) return "tops";
+  const l = label.toLowerCase();
+  if (["shirt","blouse","jacket","hoodie","top","coat","sweater","cardigan","t-shirt","tshirt"].some(k => l.includes(k))) return "tops";
+  if (["jeans","trouser","pant","skirt","legging","shorts","short"].some(k => l.includes(k))) return "bottoms";
+  if (["dress","jumpsuit","co-ord","coord"].some(k => l.includes(k))) return "dresses";
+  if (["shoe","boot","sandal","sneaker","heel","loafer","trainer","slipper"].some(k => l.includes(k))) return "footwear";
+  if (["necklace","earring","ring","bracelet","watch","bangle","pendant"].some(k => l.includes(k))) return "jewellery";
+  return "tops";
+}
+
 export default function ScanScreen() {
   const { navigate } = useApp();
   const { speak } = useVoice();
@@ -40,6 +51,7 @@ export default function ScanScreen() {
   const [result, setResult] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
+  const [guidanceState, setGuidanceState] = useState("idle"); // idle | too_dark | too_bright | no_clothing | too_far | too_close | off_center | ready
 
   const capturedBase64Ref = useRef(null);
   const captureRef = useRef(null);
@@ -72,6 +84,18 @@ export default function ScanScreen() {
       resultHeadingRef.current.focus();
     }
   }, [phase]);
+
+  // Voice command listener for save/discard/read on result phase
+  useEffect(() => {
+    const handler = (e) => {
+      const cmd = e.detail;
+      if (cmd.type === "SAVE_ITEM" && phase === "result") handleSave();
+      else if (cmd.type === "DISCARD_ITEM" && phase === "result") reset();
+      else if (cmd.type === "READ_RESULT" && phase === "result") speakResult();
+    };
+    window.addEventListener("voiceCommand", handler);
+    return () => window.removeEventListener("voiceCommand", handler);
+  }, [phase, handleSave, reset, speakResult]);
 
   const speakGuidance = useCallback((msg) => {
     const now = Date.now();
@@ -107,20 +131,71 @@ export default function ScanScreen() {
     }, 1000);
   }, [speak, triggerCapture]);
 
-  const handleGuidanceSample = useCallback((_base64, brightness) => {
+  const handleGuidanceSample = useCallback((_base64, brightness, _videoW, _videoH, { subjectBox } = {}) => {
     if (!guidanceActiveRef.current) return;
+
+    // 1. Lighting — highest priority
     if (brightness < 40) {
       cancelCountdown();
       guidanceReadyRef.current = false;
+      setGuidanceState("too_dark");
       speakGuidance(RESPONSES.guidance.tooDark);
       return;
     }
     if (brightness > 220) {
       cancelCountdown();
       guidanceReadyRef.current = false;
+      setGuidanceState("too_bright");
       speakGuidance(RESPONSES.guidance.tooBright);
       return;
     }
+
+    // 2. Clothing presence
+    if (!subjectBox || subjectBox.confidence < 0.15) {
+      cancelCountdown();
+      guidanceReadyRef.current = false;
+      setGuidanceState("no_clothing");
+      speakGuidance(RESPONSES.guidance.noClothing);
+      return;
+    }
+
+    // 3. Subject size
+    const area = (subjectBox.x2 - subjectBox.x1) * (subjectBox.y2 - subjectBox.y1);
+    if (area < 0.10) {
+      cancelCountdown();
+      guidanceReadyRef.current = false;
+      setGuidanceState("too_far");
+      speakGuidance(RESPONSES.guidance.tooFar);
+      return;
+    }
+    if (area > 0.75) {
+      cancelCountdown();
+      guidanceReadyRef.current = false;
+      setGuidanceState("too_close");
+      speakGuidance(RESPONSES.guidance.tooClose);
+      return;
+    }
+
+    // 4. Centering
+    const centerX = (subjectBox.x1 + subjectBox.x2) / 2;
+    const centerY = (subjectBox.y1 + subjectBox.y2) / 2;
+    if (Math.abs(centerX - 0.5) > 0.25) {
+      cancelCountdown();
+      guidanceReadyRef.current = false;
+      setGuidanceState("off_center");
+      speakGuidance(centerX < 0.5 ? RESPONSES.guidance.moveRight : RESPONSES.guidance.moveLeft);
+      return;
+    }
+    if (Math.abs(centerY - 0.5) > 0.3) {
+      cancelCountdown();
+      guidanceReadyRef.current = false;
+      setGuidanceState("off_center");
+      speakGuidance(centerY < 0.5 ? RESPONSES.guidance.moveDown : RESPONSES.guidance.moveUp);
+      return;
+    }
+
+    // 5. All conditions met — start countdown
+    setGuidanceState("ready");
     if (!guidanceReadyRef.current) startCountdown();
   }, [cancelCountdown, speakGuidance, startCountdown]);
 
@@ -162,19 +237,24 @@ export default function ScanScreen() {
     let imageUrl = null;
     try {
       if (capturedBase64Ref.current) imageUrl = await uploadClothingImage(capturedBase64Ref.current);
-    } catch { /* non-blocking */ }
+    } catch {
+      const msg = "Could not save image. Item saved without a photo.";
+      announce(msg, "polite");
+      speak(msg);
+    }
 
     const primary = result.raw?.garment_details?.[0];
+    const fullDescription = result.speech_segments?.map((s) => s.text).join("  ") || "";
     try {
       await addItem({
         name: primary?.display_name || primary?.label || "Outfit",
         type: primary?.label || "outfit",
-        category: "dresses",
+        category: inferCategory(primary?.label),
         color: primary?.hex_color || "#000000",
         colorDescription: primary?.color_name || "",
-        pattern: "solid",
+        pattern: primary?.pattern || "solid",
         gender: "unisex",
-        description: result.speech_segments?.[0]?.text || "",
+        description: fullDescription,
         imageUrl,
       });
       const itemName = primary?.display_name || "item";
@@ -191,6 +271,7 @@ export default function ScanScreen() {
     setResult(null);
     setPreviewUrl(null);
     setErrorMsg("");
+    setGuidanceState("idle");
     guidanceActiveRef.current = true;
     guidanceReadyRef.current = false;
     lastSpokenRef.current = { msg: "", ts: 0 };
@@ -215,6 +296,7 @@ export default function ScanScreen() {
             guidanceMode={true}
             onGuidanceSample={handleGuidanceSample}
             captureRef={captureRef}
+            guidanceStatus={guidanceState}
           />
         </div>
       </>

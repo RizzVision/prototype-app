@@ -46,6 +46,10 @@ export function VoiceProvider({ children, announce, onScreenCommand }) {
       case "PAUSE_SCAN":
       case "RESUME_SCAN":
       case "SUGGEST_CHANGES":
+      case "CONFIRM":
+      case "READ_RESULT":
+      case "SELECT_OCCASION":
+      case "SELECT_MOOD":
         // Forward screen-specific commands
         if (onScreenCommand) onScreenCommand(command);
         break;

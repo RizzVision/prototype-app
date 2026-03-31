@@ -43,6 +43,17 @@ export default function MirrorScreen() {
     if (phase === "result" && resultRef.current) resultRef.current.focus();
   }, [phase]);
 
+  useEffect(() => {
+    const handler = (e) => {
+      const cmd = e.detail;
+      if (cmd.type === "SCAN_AGAIN") reset();
+      else if (cmd.type === "SAVE_ITEM") speak("Mirror mode does not save items. Use Scan Clothing to save to your wardrobe.");
+      else if (cmd.type === "READ_RESULT" && phase === "result") speakResult();
+    };
+    window.addEventListener("voiceCommand", handler);
+    return () => window.removeEventListener("voiceCommand", handler);
+  }, [phase, reset, speak, speakResult]);
+
   const handleCapture = useCallback(async (base64, dataUrl) => {
     setPhase("analyzing");
     setPreviewUrl(dataUrl);

@@ -40,6 +40,17 @@ export default function ShoppingScreen() {
     announce(RESPONSES.shoppingStart, "polite");
   }, [speak, announce]);
 
+  useEffect(() => {
+    const handler = (e) => {
+      const cmd = e.detail;
+      if (cmd.type === "PAUSE_SCAN" && scanning) toggleScanning();
+      else if (cmd.type === "RESUME_SCAN" && !scanning) toggleScanning();
+      else if (cmd.type === "READ_RESULT") speakLastResult();
+    };
+    window.addEventListener("voiceCommand", handler);
+    return () => window.removeEventListener("voiceCommand", handler);
+  }, [scanning, toggleScanning, speakLastResult]);
+
   const handleCapture = useCallback(async (base64) => {
     if (processing) return;
     setProcessing(true);

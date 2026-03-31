@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import { C, FONT } from "../utils/constants";
 
-export default function CameraView({ onCapture, onError, autoCapture = false, captureInterval = 4000, guidanceMode = false, onGuidanceSample, captureRef }) {
+export default function CameraView({ onCapture, onError, autoCapture = false, captureInterval = 4000, guidanceMode = false, onGuidanceSample, captureRef, guidanceStatus = "idle" }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const guidanceCanvasRef = useRef(null);
@@ -12,6 +12,26 @@ export default function CameraView({ onCapture, onError, autoCapture = false, ca
   const [ready, setReady] = useState(false);
   const [error, setError] = useState(null);
   const [facingMode, setFacingMode] = useState("environment");
+
+  const guideColor = (() => {
+    if (guidanceStatus === "too_dark" || guidanceStatus === "too_bright") return "#FFD600";
+    if (guidanceStatus === "ready") return "#44CC77";
+    if (["no_clothing", "off_center", "too_far", "too_close"].includes(guidanceStatus)) return "#FF5555";
+    return "#888888";
+  })();
+
+  const guideText = (() => {
+    switch (guidanceStatus) {
+      case "too_dark":    return "Too dark — find brighter light";
+      case "too_bright":  return "Too bright — avoid direct light";
+      case "no_clothing": return "Point camera at clothing";
+      case "too_far":     return "Move closer";
+      case "too_close":   return "Move back";
+      case "off_center":  return "Centre the clothing";
+      case "ready":       return "Hold steady…";
+      default:            return "Hold clothing here";
+    }
+  })();
 
   const startCamera = useCallback(async (facing) => {
     const mode = facing ?? facingModeRef.current;
@@ -207,6 +227,45 @@ export default function CameraView({ onCapture, onError, autoCapture = false, ca
       />
       <canvas ref={canvasRef} style={{ display: "none" }} />
       <canvas ref={guidanceCanvasRef} style={{ display: "none" }} />
+
+      {/* Guide frame overlay — visual aid for positioning clothing */}
+      {guidanceMode && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            top: "10%",
+            left: "15%",
+            width: "70%",
+            height: "80%",
+            border: `3px dashed ${guideColor}`,
+            borderRadius: 16,
+            boxSizing: "border-box",
+            pointerEvents: "none",
+            transition: "border-color 0.4s ease",
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              bottom: -34,
+              left: 0,
+              right: 0,
+              textAlign: "center",
+              fontFamily: FONT,
+              fontSize: 13,
+              fontWeight: 600,
+              color: guideColor,
+              letterSpacing: "0.04em",
+              textShadow: "0 1px 4px rgba(0,0,0,0.85)",
+              transition: "color 0.4s ease",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {guideText}
+          </div>
+        </div>
+      )}
 
       {/* Flip camera button — always visible when camera is ready */}
       <div style={{

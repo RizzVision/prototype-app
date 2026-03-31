@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Screen from "../components/Screen";
 import BigButton from "../components/BigButton";
 import { useApp } from "../contexts/AppContext";
@@ -24,8 +24,20 @@ export default function EditItemScreen() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (item) speak(`Editing ${item.name}. Tap a field to change it, then tap Save.`);
+    if (item) speak(`Editing ${item.name}. Tap a field to change it, then tap Save. Say confirm to save.`);
   }, []);
+
+  // Keep a ref to the latest handleSave to avoid stale closure in the voice listener
+  const handleSaveRef = useRef(handleSave);
+  useEffect(() => { handleSaveRef.current = handleSave; });
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.detail?.type === "CONFIRM" && !saving) handleSaveRef.current();
+    };
+    window.addEventListener("voiceCommand", handler);
+    return () => window.removeEventListener("voiceCommand", handler);
+  }, [saving]);
 
   if (!item) {
     goBack();
@@ -69,7 +81,7 @@ export default function EditItemScreen() {
             fontFamily: FONT, fontSize: 16, color: C.text,
             resize: "vertical", outline: "none",
           }}
-          onFocus={e => (e.target.style.borderColor = C.focus)}
+          onFocus={e => { e.target.style.borderColor = C.focus; speak(`${label}. Current value: ${formValues[key] || "empty"}`); }}
           onBlur={e => (e.target.style.borderColor = C.border)}
         />
       ) : (
@@ -86,7 +98,7 @@ export default function EditItemScreen() {
             fontFamily: FONT, fontSize: 16, color: C.text,
             outline: "none",
           }}
-          onFocus={e => (e.target.style.borderColor = C.focus)}
+          onFocus={e => { e.target.style.borderColor = C.focus; speak(`${label}. Current value: ${formValues[key] || "empty"}`); }}
           onBlur={e => (e.target.style.borderColor = C.border)}
         />
       )}
@@ -108,7 +120,7 @@ export default function EditItemScreen() {
             return (
               <button
                 key={cat.id}
-                onClick={() => setFormValues(v => ({ ...v, category: cat.id }))}
+                onClick={() => { setFormValues(v => ({ ...v, category: cat.id })); speak(`Category set to ${cat.label}`); }}
                 aria-pressed={active}
                 aria-label={`Category: ${cat.label}`}
                 style={{
