@@ -1,0 +1,28 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model WardrobeItem {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId           String   @map("user_id") @db.Uuid
+  name             String
+  type             String
+  category         String
+  color            String
+  colorDescription String   @map("color_description")
+  pattern          String
+  gender           String
+  description      String
+  imageUrl         String?  @map("image_url")
+  dateAdded        DateTime @default(now()) @map("date_added") @db.Timestamptz
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([userId], map: "idx_wardrobe_items_user_id")
+  @@index([userId, category], map: "idx_wardrobe_items_category")
+  @@map("wardrobe_items")
+}
