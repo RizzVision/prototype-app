@@ -1,17 +1,55 @@
-# Ignore node_modules directory
-node_modules/
-/src/generated/prisma
-
-# Environment variables
+# ── Secrets ──────────────────────────────────────────────────────────────────
 .env
 .env.local
 .env.production
-.env.development.local
-.env.production.local
-.env.test.local
+webapp/prototype-app/.env.local
+webapp/prototype-app/.env.production
 
-# Prisma migrations (managed per-environment)
-prisma/migrations/
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.so
+*.dylib
 
-# Claude worktrees
-.claude/worktrees
+# ── Virtual environments ──────────────────────────────────────────────────────
+venv/
+.venv/
+env/
+.env/
+ENV/
+
+# ── HuggingFace model cache ───────────────────────────────────────────────────
+hf_cache/
+*.pt
+*.pth
+*.bin
+*.safetensors
+
+# ── Node / Vite ───────────────────────────────────────────────────────────────
+node_modules/
+webapp/prototype-app/node_modules/
+dist/
+webapp/prototype-app/dist/
+.vite/
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── IDE ───────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+logs/

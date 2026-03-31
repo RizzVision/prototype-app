@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Verify your email – Rizzvision</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+
+    body {
+      margin: 0;
+      padding: 48px 16px;
+      background: #f5f5f4;
+      font-family: 'Inter', sans-serif;
+      color: #1c1c1c;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .wrapper {
+      max-width: 480px;
+      margin: 0 auto;
+    }
+
+    .brand {
+      text-align: center;
+      margin-bottom: 28px;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: -0.2px;
+      color: #111;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      border: 1px solid #e5e5e3;
+      padding: 40px 36px;
+    }
+
+    h1 {
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: -0.4px;
+      margin: 0 0 10px;
+      color: #111;
+    }
+
+    p {
+      font-size: 14px;
+      line-height: 1.7;
+      color: #555;
+      margin: 0 0 28px;
+    }
+
+    .btn {
+      display: inline-block;
+      padding: 11px 24px;
+      background: #111;
+      color: #fff;
+      font-family: 'Inter', sans-serif;
+      font-size: 14px;
+      font-weight: 500;
+      text-decoration: none;
+      border-radius: 8px;
+    }
+
+    .divider {
+      border: none;
+      border-top: 1px solid #ebebea;
+      margin: 32px 0;
+    }
+
+    .fallback {
+      font-size: 12px;
+      color: #999;
+      line-height: 1.7;
+      margin: 0;
+    }
+
+    .fallback a {
+      color: #555;
+      word-break: break-all;
+    }
+
+    .footer {
+      text-align: center;
+      margin-top: 28px;
+      font-size: 12px;
+      color: #aaa;
+      line-height: 1.7;
+    }
+
+    .footer a {
+      color: #aaa;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="wrapper">
+
+    <div class="brand">Rizzvision</div>
+
+    <div class="card">
+      <h1>Verify your email</h1>
+      <p>Click the button below to confirm your email address and activate your account. This link expires in 24 hours.</p>
+
+      <a class="btn" href="{{ .ConfirmationURL }}">Verify email</a>
+
+      <hr class="divider" />
+
+      <p class="fallback">
+        If the button doesn't work, paste this link into your browser:<br/>
+        <a href="{{ .ConfirmationURL }}">{{ .ConfirmationURL }}</a>
+      </p>
+    </div>
+
+    <div class="footer">
+      <p>
+        Didn't create an account? You can ignore this email.<br/>
+        © 2026 Rizzvision · <a href="#">Privacy</a> · <a href="mailto:team.rizzvision@gmail.com">Support</a>
+      </p>
+    </div>
+
+  </div>
+
+</body>
+</html>
