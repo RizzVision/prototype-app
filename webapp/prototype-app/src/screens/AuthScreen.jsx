@@ -229,6 +229,7 @@ export default function AuthScreen() {
       >
         {isSignUp ? "Already have an account? Sign in" : "Don't have an account? Sign up"}
       </button>
+
     </Screen>
     </>
   );

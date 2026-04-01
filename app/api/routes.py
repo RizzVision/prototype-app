@@ -10,6 +10,7 @@ from dataclasses import asdict
 
 import numpy as np
 from fastapi import APIRouter, UploadFile, File
+from pydantic import BaseModel
 
 from app.errors.handlers import ERROR_MESSAGES
 from app.services.image_ingestion import ImageQualityError, ingest_image, check_image_quality
@@ -163,3 +164,40 @@ async def analyze_outfit(image: UploadFile = File(...)):
         f"style={engine_result.style.primary_archetype}"
     )
     return response
+
+
+class OutfitSuggestionRequest(BaseModel):
+    occasion: str
+    mood: str
+    wardrobe: str
+    anchor: str = ""
+
+
+@router.post("/outfit-suggestion")
+async def outfit_suggestion(req: OutfitSuggestionRequest):
+    """
+    Generate outfit combinations from wardrobe items for a given occasion and mood.
+    Uses Gemini to produce TTS-ready spoken suggestions.
+    """
+    import google.generativeai as genai
+    from app.core.config import settings
+
+    genai.configure(api_key=settings.gemini_api_key)
+    model = genai.GenerativeModel(settings.gemini_model)
+
+    anchor_line = f"\n{req.anchor}" if req.anchor else ""
+    prompt = (
+        f"You are a confident fashion stylist speaking to a visually impaired user. "
+        f"Your response will be read aloud. Keep every sentence under 15 words. "
+        f"Use vivid sensory language for colours (warmth, texture, mood) — never just name the colour.\n\n"
+        f"Occasion: {req.occasion}\nMood: {req.mood}{anchor_line}\n\n"
+        f"Their wardrobe:\n{req.wardrobe}\n\n"
+        f"Give 2 outfit combinations. Format:\n"
+        f"Outfit one: [name]\nWhat to wear: [pieces]\nHow it feels: [colour/texture description]\nWhy it works: [1-2 sentences]\n\n"
+        f"Outfit two: [name]\nWhat to wear: [pieces]\nHow it feels: [colour/texture description]\nWhy it works: [1-2 sentences]\n\n"
+        f"One thing to avoid: [clear warning]\n\n"
+        f"If wardrobe is empty or too sparse, say so and suggest what to add."
+    )
+
+    response = model.generate_content(prompt)
+    return {"suggestion": response.text}
