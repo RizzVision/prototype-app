@@ -40,17 +40,6 @@ export default function ShoppingScreen() {
     announce(RESPONSES.shoppingStart, "polite");
   }, [speak, announce]);
 
-  useEffect(() => {
-    const handler = (e) => {
-      const cmd = e.detail;
-      if (cmd.type === "PAUSE_SCAN" && scanning) toggleScanning();
-      else if (cmd.type === "RESUME_SCAN" && !scanning) toggleScanning();
-      else if (cmd.type === "READ_RESULT") speakLastResult();
-    };
-    window.addEventListener("voiceCommand", handler);
-    return () => window.removeEventListener("voiceCommand", handler);
-  }, [scanning, toggleScanning, speakLastResult]);
-
   const handleCapture = useCallback(async (base64) => {
     if (processing) return;
     setProcessing(true);
@@ -95,6 +84,18 @@ export default function ShoppingScreen() {
       speak(result.speech_segments.map((s) => s.text).join("  "));
     }
   }, [result, speak]);
+
+  // Voice command listener — placed after all callbacks to avoid TDZ in prod build
+  useEffect(() => {
+    const handler = (e) => {
+      const cmd = e.detail;
+      if (cmd.type === "PAUSE_SCAN" && scanning) toggleScanning();
+      else if (cmd.type === "RESUME_SCAN" && !scanning) toggleScanning();
+      else if (cmd.type === "READ_RESULT") speakLastResult();
+    };
+    window.addEventListener("voiceCommand", handler);
+    return () => window.removeEventListener("voiceCommand", handler);
+  }, [scanning, toggleScanning, speakLastResult]);
 
   const sc = result ? scoreColor(result.color_score ?? 0) : C.muted;
 

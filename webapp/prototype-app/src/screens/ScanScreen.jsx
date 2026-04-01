@@ -85,17 +85,6 @@ export default function ScanScreen() {
     }
   }, [phase]);
 
-  // Voice command listener for save/discard/read on result phase
-  useEffect(() => {
-    const handler = (e) => {
-      const cmd = e.detail;
-      if (cmd.type === "SAVE_ITEM" && phase === "result") handleSave();
-      else if (cmd.type === "DISCARD_ITEM" && phase === "result") reset();
-      else if (cmd.type === "READ_RESULT" && phase === "result") speakResult();
-    };
-    window.addEventListener("voiceCommand", handler);
-    return () => window.removeEventListener("voiceCommand", handler);
-  }, [phase, handleSave, reset, speakResult]);
 
   const speakGuidance = useCallback((msg) => {
     const now = Date.now();
@@ -283,6 +272,18 @@ export default function ScanScreen() {
       speak(result.speech_segments.map((s) => s.text).join("  "));
     }
   }, [result, speak]);
+
+  // Voice command listener — placed after all callbacks to avoid TDZ in prod build
+  useEffect(() => {
+    const handler = (e) => {
+      const cmd = e.detail;
+      if (cmd.type === "SAVE_ITEM" && phase === "result") handleSave();
+      else if (cmd.type === "DISCARD_ITEM" && phase === "result") reset();
+      else if (cmd.type === "READ_RESULT" && phase === "result") speakResult();
+    };
+    window.addEventListener("voiceCommand", handler);
+    return () => window.removeEventListener("voiceCommand", handler);
+  }, [phase, handleSave, reset, speakResult]);
 
   // ── Camera ─────────────────────────────────────────────────────────────────
   if (phase === "camera") {
