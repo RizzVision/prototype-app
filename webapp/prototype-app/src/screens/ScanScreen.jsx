@@ -288,6 +288,18 @@ export default function ScanScreen() {
     return () => window.removeEventListener("voiceCommand", handler);
   }, [phase, handleSave, reset, speakResult]);
 
+  const handleUpload = useCallback((e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target.result;
+      const base64 = dataUrl.split(",")[1];
+      handleCapture(base64, dataUrl);
+    };
+    reader.readAsDataURL(file);
+  }, [handleCapture]);
+
   // ── Camera ─────────────────────────────────────────────────────────────────
   if (phase === "camera") {
     return (
@@ -303,6 +315,38 @@ export default function ScanScreen() {
             guidanceStatus={guidanceState}
             subjectBox={subjectBox}
           />
+          {/* Upload button overlay */}
+          <div style={{
+            position: "absolute", bottom: 140, left: 0, right: 0,
+            display: "flex", justifyContent: "center", zIndex: 10,
+          }}>
+            <label
+              aria-label="Upload a photo from your gallery instead of using camera"
+              style={{
+                background: "rgba(0,0,0,0.65)",
+                border: `2px solid rgba(255,255,255,0.5)`,
+                borderRadius: 14,
+                color: "#fff",
+                fontFamily: FONT,
+                fontSize: 14,
+                fontWeight: 600,
+                padding: "10px 20px",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <span aria-hidden>🖼</span> Upload from Gallery
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleUpload}
+                style={{ display: "none" }}
+                aria-hidden
+              />
+            </label>
+          </div>
         </div>
       </>
     );
