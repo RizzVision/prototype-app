@@ -30,6 +30,7 @@ export default function OutfitScreen() {
     } else {
       speak(RESPONSES.outfitPrompt);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

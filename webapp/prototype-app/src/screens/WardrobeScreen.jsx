@@ -22,7 +22,7 @@ export default function WardrobeScreen() {
     } else {
       speak(RESPONSES.wardrobeCount(items.length));
     }
-  }, []);
+  }, [items, speak]);
 
   const readAll = useCallback(() => {
     if (filtered.length === 0) {
