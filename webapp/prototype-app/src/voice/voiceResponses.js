@@ -32,7 +32,7 @@ export const RESPONSES = {
   shoppingStart: "Shopping mode active. Point your camera at clothing for real-time feedback.",
   shoppingPaused: "Scanning paused.",
   shoppingResumed: "Scanning resumed.",
-  mirrorReady: "Stand back so I can see your full outfit, then tap capture.",
+  mirrorReady: "Mirror mode. This gives instant feedback on what you are wearing right now. Nothing is saved. Stand back so I can see your full outfit, then tap capture.",
   mirrorAnalyzing: "Analyzing your outfit. Please hold still.",
   authRequired: "Your session expired. Please sign in again and retry.",
   backendUnavailable: "Could not reach the analysis server. Please check your connection and try again.",

@@ -30,6 +30,26 @@ function scoreColor(score) {
   return C.danger;
 }
 
+function hexDistance(a, b) {
+  if (!a || !b) return 999;
+  const parse = (hex) => {
+    const h = hex.replace("#", "");
+    return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)];
+  };
+  const [r1,g1,b1] = parse(a);
+  const [r2,g2,b2] = parse(b);
+  return Math.sqrt((r1-r2)**2 + (g1-g2)**2 + (b1-b2)**2);
+}
+
+function findDuplicate(garment, existingItems) {
+  const cat = inferCategory(garment.label);
+  for (const item of existingItems) {
+    if (item.category !== cat) continue;
+    if (hexDistance(item.color, garment.hex_color) < 65) return item;
+  }
+  return null;
+}
+
 function inferCategory(label) {
   if (!label) return "tops";
   const l = label.toLowerCase();
@@ -44,15 +64,17 @@ function inferCategory(label) {
 export default function ScanScreen() {
   const { navigate } = useApp();
   const { speak } = useVoice();
-  const { addItem } = useWardrobe();
+  const { addItem, items: wardrobeItems } = useWardrobe();
   const { announce, LiveRegions } = useAnnounce();
 
-  const [phase, setPhase] = useState("camera"); // camera | analyzing | error | result | saving
+  const [phase, setPhase] = useState("camera"); // camera | analyzing | error | result | saving | confirm_duplicate
   const [result, setResult] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
   const [guidanceState, setGuidanceState] = useState("idle"); // idle | too_dark | too_bright | no_clothing | too_far | too_close | off_center | ready
   const [subjectBox, setSubjectBox] = useState(null);
+
+  const [duplicateInfo, setDuplicateInfo] = useState(null); // { existing, incoming }
 
   const capturedBase64Ref = useRef(null);
   const captureRef = useRef(null);
@@ -221,7 +243,7 @@ export default function ScanScreen() {
     }
   }, [speak, cancelCountdown, announce]);
 
-  const handleSave = useCallback(async () => {
+  const doSave = useCallback(async () => {
     if (!result) return;
     setPhase("saving");
     announce("Saving to your wardrobe.", "polite");
@@ -278,11 +300,31 @@ export default function ScanScreen() {
     }
   }, [result, addItem, speak, navigate, announce]);
 
+  const handleSave = useCallback(() => {
+    if (!result) return;
+    const garments = result.raw?.garment_details || [];
+    // Check each garment for a duplicate in the wardrobe
+    for (const g of garments) {
+      const match = findDuplicate(g, wardrobeItems);
+      if (match) {
+        const incomingName = g.display_name || g.label || "this item";
+        const msg = `You already have a similar item: ${match.name}. Is what you want to save different?`;
+        setDuplicateInfo({ existing: match, incoming: g, incomingName });
+        setPhase("confirm_duplicate");
+        speak(msg);
+        announce(msg, "assertive");
+        return;
+      }
+    }
+    doSave();
+  }, [result, wardrobeItems, doSave, speak, announce]);
+
   const reset = useCallback(() => {
     setResult(null);
     setPreviewUrl(null);
     setErrorMsg("");
     setGuidanceState("idle");
+    setDuplicateInfo(null);
     guidanceActiveRef.current = true;
     guidanceReadyRef.current = false;
     lastSpokenRef.current = { msg: "", ts: 0 };
@@ -448,6 +490,61 @@ export default function ScanScreen() {
             hint="Hear the error message again"
             icon="🔊"
             onClick={() => speak(errorMsg)}
+          />
+        </div>
+      </Screen>
+    );
+  }
+
+  // ── Duplicate Confirmation ─────────────────────────────────────────────────
+  if (phase === "confirm_duplicate" && duplicateInfo) {
+    const { existing, incomingName } = duplicateInfo;
+    return (
+      <Screen title="Already in Wardrobe" subtitle="A similar item was found.">
+        <LiveRegions />
+        <div
+          role="alert"
+          style={{
+            background: C.surface, borderRadius: 16, padding: 20,
+            border: `2px solid ${C.focus}`, marginBottom: 24,
+          }}
+        >
+          <p style={{ fontFamily: FONT, fontSize: 16, color: C.text, lineHeight: 1.75, margin: 0 }}>
+            You already have <strong>{existing.name}</strong> in your wardrobe.
+            {existing.colorDescription ? ` It is described as ${existing.colorDescription}.` : ""}
+            {" "}Is what you want to save different?
+          </p>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <BigButton
+            label="Yes, save as new item"
+            hint={`Save ${incomingName} as a new separate item`}
+            icon="✓"
+            variant="success"
+            onClick={doSave}
+          />
+          <BigButton
+            label="No, skip saving"
+            hint="Do not save. This is the same item."
+            icon="✕"
+            onClick={() => {
+              const msg = "Not saved. Going back to your analysis.";
+              speak(msg);
+              announce(msg, "polite");
+              setPhase("result");
+              setDuplicateInfo(null);
+            }}
+          />
+          <BigButton
+            label="Read existing item"
+            hint={`Hear the description of the item already in your wardrobe: ${existing.name}`}
+            icon="🔊"
+            onClick={() => {
+              const desc = existing.description
+                ? `${existing.name}. ${existing.description}`
+                : `${existing.name}, saved on ${new Date(existing.dateAdded).toLocaleDateString()}.`;
+              speak(desc);
+            }}
           />
         </div>
       </Screen>

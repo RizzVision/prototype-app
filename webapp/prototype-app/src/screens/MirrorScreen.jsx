@@ -90,7 +90,7 @@ export default function MirrorScreen() {
     const handler = (e) => {
       const cmd = e.detail;
       if (cmd.type === "SCAN_AGAIN") reset();
-      else if (cmd.type === "SAVE_ITEM") speak("Mirror mode does not save items. Use Scan Clothing to save to your wardrobe.");
+      else if (cmd.type === "SAVE_ITEM") speak("Mirror mode only gives instant feedback. To save items to your wardrobe, go back and use Scan Clothing instead.");
       else if (cmd.type === "READ_RESULT" && phase === "result") speakResult();
     };
     window.addEventListener("voiceCommand", handler);
@@ -103,6 +103,30 @@ export default function MirrorScreen() {
       <>
         <LiveRegions />
         <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+          {/* Distinction banner */}
+          <div
+            role="note"
+            aria-label="Mirror mode: instant feedback only. Nothing is saved to your wardrobe. Use Scan Clothing to save items."
+            style={{
+              background: "rgba(0,0,0,0.72)",
+              borderBottom: "1px solid rgba(255,255,255,0.12)",
+              padding: "10px 16px",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              zIndex: 10,
+            }}
+          >
+            <span aria-hidden style={{ fontSize: 18 }}>🪞</span>
+            <div>
+              <div style={{ fontFamily: "inherit", fontSize: 13, color: "#fff", fontWeight: 700, lineHeight: 1.3 }}>
+                Instant feedback — nothing saved
+              </div>
+              <div style={{ fontFamily: "inherit", fontSize: 11, color: "rgba(255,255,255,0.55)", marginTop: 2 }}>
+                Use Scan Clothing to add items to your wardrobe
+              </div>
+            </div>
+          </div>
           <CameraView
             onCapture={handleCapture}
             onError={(msg) => { announce(msg, "assertive"); speak(msg); }}
@@ -190,7 +214,7 @@ export default function MirrorScreen() {
   const archetype = result?.style_archetype || "";
 
   return (
-    <Screen title="Auditory Mirror" subtitle="Here is my honest assessment.">
+    <Screen title="Auditory Mirror" subtitle="Instant feedback — not saved to wardrobe.">
       <LiveRegions />
 
       <h2

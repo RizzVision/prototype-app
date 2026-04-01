@@ -19,7 +19,7 @@ export default function HomeScreen() {
   }, [speak]);
 
   useEffect(() => {
-    if (isListening) speak("Try: scan clothing, my wardrobe, outfit help, shopping mode, or mirror.");
+    if (isListening) speak("Try: scan clothing to save items, mirror to check today's outfit, my wardrobe, outfit help, or shopping mode.");
   }, [isListening, speak]);
 
   return (
@@ -46,7 +46,7 @@ export default function HomeScreen() {
         <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 14 }}>
           <BigButton
             label="Scan Clothing"
-            hint="Open camera to identify a clothing item"
+            hint="Identify and save items to your wardrobe. Use this to build your collection."
             icon="📸"
             variant="primary"
             onClick={() => navigate(SCREENS.SCAN)}
@@ -79,7 +79,7 @@ export default function HomeScreen() {
           <div style={{ flex: 1 }}>
             <BigButton
               label="Mirror"
-              hint="Get an honest assessment of your outfit"
+              hint="Check today's outfit before going out. No saving — instant feedback only."
               icon="🪞"
               onClick={() => navigate(SCREENS.MIRROR)}
             />
