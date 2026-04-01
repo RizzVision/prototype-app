@@ -450,7 +450,7 @@ export default function ScanScreen() {
       <h2
         ref={resultHeadingRef}
         tabIndex={-1}
-        aria-label={`Analysis complete. Color score: ${scoreLabel}, ${Math.round(score * 100)} percent. Best occasion: ${occasion}.`}
+        aria-label={`Analysis complete. Color score: ${scoreLabel}, ${Math.round(score * 100)} percent.`}
         style={{ position: "absolute", left: -9999, top: "auto", width: 1, height: 1, overflow: "hidden" }}
       />
 
@@ -462,14 +462,14 @@ export default function ScanScreen() {
         />
       )}
 
-      {/* Score + Occasion */}
+      {/* Color Score */}
       <div
         role="region"
-        aria-label={`Color score ${Math.round(score * 100)} percent, ${scoreLabel}. Best occasion: ${occasion}.`}
-        style={{ display: "flex", gap: 10, marginBottom: 14 }}
+        aria-label={`Color score ${Math.round(score * 100)} percent, ${scoreLabel}.`}
+        style={{ marginBottom: 14 }}
       >
         <div style={{
-          flex: 1, background: C.surface, borderRadius: 14, padding: "14px 16px",
+          background: C.surface, borderRadius: 14, padding: "14px 16px",
           border: `2px solid ${sc}`, textAlign: "center",
         }}>
           <div style={{ fontFamily: FONT, fontSize: 11, color: C.muted, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 4 }}>
@@ -482,20 +482,6 @@ export default function ScanScreen() {
             {scoreLabel}
           </div>
         </div>
-
-        {occasion && (
-          <div style={{
-            flex: 1, background: C.surface, borderRadius: 14, padding: "14px 16px",
-            border: `1px solid ${C.border}`, textAlign: "center",
-          }}>
-            <div style={{ fontFamily: FONT, fontSize: 11, color: C.muted, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 4 }}>
-              Best For
-            </div>
-            <div style={{ fontFamily: FONT, fontSize: 15, fontWeight: 600, color: C.text, lineHeight: 1.3 }}>
-              {occasion}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Style archetype pill */}
