@@ -8,12 +8,10 @@
 # Subsequent restarts skip the download (cache persists for the lifetime of
 # the Space's persistent storage).
 
-FROM python:3.11-slim
+FROM python:3.11
 
-# System libs needed by PyTorch / OpenCV / PIL
+# System libs for image processing (already in full image, but explicit)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        libgl1-mesa-glx \
-        libglib2.0-0 \
         libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
