@@ -19,8 +19,8 @@ WORKDIR /app
 
 # ── Install CPU-only PyTorch first (avoids pulling the 2 GB CUDA wheel) ──────
 RUN pip install --no-cache-dir \
-    torch==2.3.1+cpu \
-    torchvision==0.18.1+cpu \
+    torch==2.4.1+cpu \
+    torchvision==0.19.1+cpu \
     --index-url https://download.pytorch.org/whl/cpu
 
 # ── Install remaining dependencies ───────────────────────────────────────────

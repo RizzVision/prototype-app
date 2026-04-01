@@ -13,7 +13,8 @@ import io
 import json
 import logging
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from PIL import Image
 
 from app.core.config import settings
@@ -71,15 +72,15 @@ Please return ONLY valid JSON matching this exact schema, nothing else:
   "top_fix": "string"
 }}"""
 
-_configured = False
+_client = None
 
 
-def _ensure_configured():
-    global _configured
-    if not _configured:
-        genai.configure(api_key=settings.GEMINI_API_KEY)
-        _configured = True
-        logger.info(f"Gemini configured with model: {settings.GEMINI_MODEL}")
+def _get_client():
+    global _client
+    if _client is None:
+        _client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        logger.info(f"Gemini client created with model: {settings.GEMINI_MODEL}")
+    return _client
 
 
 def _build_color_context(engine_result: ColorEngineResult) -> str:
@@ -223,20 +224,8 @@ def get_outfit_feedback(
     """
     from app.services.image_ingestion import ImageQualityError
 
-    _ensure_configured()
-
+    client = _get_client()
     color_context = _build_color_context(engine_result)
-
-    # Cap output tokens so the model doesn't over-generate.
-    # 5 short fields (garments list + 4 strings) fit comfortably in 600 tokens.
-    model = genai.GenerativeModel(
-        model_name=settings.GEMINI_MODEL,
-        system_instruction=SYSTEM_PROMPT,
-        generation_config=genai.GenerationConfig(
-            max_output_tokens=600,
-            temperature=0.4,
-        ),
-    )
 
     img_byte_arr = io.BytesIO()
     img.save(img_byte_arr, format="JPEG", quality=85)
@@ -248,13 +237,22 @@ def get_outfit_feedback(
 
 Based on the image and the pre-computed data above, provide your structured feedback as JSON."""
 
+    config = types.GenerateContentConfig(
+        system_instruction=SYSTEM_PROMPT,
+        max_output_tokens=600,
+        temperature=0.4,
+    )
+
     # First attempt
+    response = None
     try:
-        response = model.generate_content(
-            [
-                {"mime_type": "image/jpeg", "data": img_bytes},
+        response = client.models.generate_content(
+            model=settings.GEMINI_MODEL,
+            contents=[
+                types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
                 user_prompt,
-            ]
+            ],
+            config=config,
         )
         feedback = _parse_llm_json(response.text)
         return _validate_feedback(feedback)
@@ -268,7 +266,11 @@ Based on the image and the pre-computed data above, provide your structured feed
     # Retry with repair prompt
     try:
         repair_msg = REPAIR_PROMPT.format(raw_response=raw_response)
-        response = model.generate_content(repair_msg)
+        response = client.models.generate_content(
+            model=settings.GEMINI_MODEL,
+            contents=repair_msg,
+            config=types.GenerateContentConfig(max_output_tokens=600, temperature=0.2),
+        )
         feedback = _parse_llm_json(response.text)
         return _validate_feedback(feedback)
     except Exception as e:

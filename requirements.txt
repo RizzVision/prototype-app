@@ -8,5 +8,5 @@ scikit-image
 torch
 torchvision
 transformers
-google-generativeai
+google-genai
 python-dotenv

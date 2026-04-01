@@ -179,11 +179,11 @@ async def outfit_suggestion(req: OutfitSuggestionRequest):
     Generate outfit combinations from wardrobe items for a given occasion and mood.
     Uses Gemini to produce TTS-ready spoken suggestions.
     """
-    import google.generativeai as genai
+    from google import genai
+    from google.genai import types
     from app.core.config import settings
 
-    genai.configure(api_key=settings.gemini_api_key)
-    model = genai.GenerativeModel(settings.gemini_model)
+    client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
     anchor_line = f"\n{req.anchor}" if req.anchor else ""
     prompt = (
@@ -199,5 +199,9 @@ async def outfit_suggestion(req: OutfitSuggestionRequest):
         f"If wardrobe is empty or too sparse, say so and suggest what to add."
     )
 
-    response = model.generate_content(prompt)
+    response = client.models.generate_content(
+        model=settings.GEMINI_MODEL,
+        contents=prompt,
+        config=types.GenerateContentConfig(max_output_tokens=600, temperature=0.4),
+    )
     return {"suggestion": response.text}
