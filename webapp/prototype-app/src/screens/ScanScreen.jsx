@@ -235,23 +235,42 @@ export default function ScanScreen() {
       speak(msg);
     }
 
-    const primary = result.raw?.garment_details?.[0];
+    const garments = result.raw?.garment_details || [];
     const fullDescription = result.speech_segments?.map((s) => s.text).join("  ") || "";
     try {
-      await addItem({
-        name: primary?.display_name || primary?.label || "Outfit",
-        type: primary?.label || "outfit",
-        category: inferCategory(primary?.label),
-        color: primary?.hex_color || "#000000",
-        colorDescription: primary?.color_name || "",
-        pattern: primary?.pattern || "solid",
-        gender: "unisex",
-        description: fullDescription,
-        imageUrl,
-      });
-      const itemName = primary?.display_name || "item";
-      speak(RESPONSES.saved(itemName));
-      announce(RESPONSES.saved(itemName), "polite");
+      if (garments.length === 0) {
+        await addItem({
+          name: "Outfit",
+          type: "outfit",
+          category: "tops",
+          color: "#000000",
+          colorDescription: "",
+          pattern: "solid",
+          gender: "unisex",
+          description: fullDescription,
+          imageUrl,
+        });
+      } else {
+        for (const g of garments) {
+          await addItem({
+            name: g.display_name || g.label || "Item",
+            type: g.label || "outfit",
+            category: inferCategory(g.label),
+            color: g.hex_color || "#000000",
+            colorDescription: g.color_name || "",
+            pattern: g.pattern || "solid",
+            gender: "unisex",
+            description: fullDescription,
+            imageUrl,
+          });
+        }
+      }
+      const count = garments.length;
+      const savedMsg = count > 1
+        ? `${count} items saved to your wardrobe.`
+        : RESPONSES.saved(garments[0]?.display_name || "item");
+      speak(savedMsg);
+      announce(savedMsg, "polite");
       setTimeout(() => navigate(SCREENS.WARDROBE), 1500);
     } catch {
       speak(RESPONSES.error);
