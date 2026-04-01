@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import { C, FONT } from "../utils/constants";
 
-export default function CameraView({ onCapture, onError, autoCapture = false, captureInterval = 4000, guidanceMode = false, onGuidanceSample, captureRef, guidanceStatus = "idle" }) {
+export default function CameraView({ onCapture, onError, autoCapture = false, captureInterval = 4000, guidanceMode = false, onGuidanceSample, captureRef, guidanceStatus = "idle", subjectBox = null }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const guidanceCanvasRef = useRef(null);
@@ -230,40 +230,65 @@ export default function CameraView({ onCapture, onError, autoCapture = false, ca
 
       {/* Guide frame overlay — visual aid for positioning clothing */}
       {guidanceMode && (
-        <div
-          aria-hidden="true"
-          style={{
+        <div aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+
+          {/* Target zone border */}
+          <div style={{
             position: "absolute",
-            top: "10%",
-            left: "15%",
-            width: "70%",
-            height: "80%",
-            border: `3px dashed ${guideColor}`,
+            top: "10%", left: "15%", width: "70%", height: "80%",
+            border: `3px solid ${guideColor}`,
             borderRadius: 16,
             boxSizing: "border-box",
-            pointerEvents: "none",
             transition: "border-color 0.4s ease",
-          }}
-        >
-          <div
-            style={{
-              position: "absolute",
-              bottom: -34,
-              left: 0,
-              right: 0,
-              textAlign: "center",
-              fontFamily: FONT,
-              fontSize: 13,
-              fontWeight: 600,
-              color: guideColor,
-              letterSpacing: "0.04em",
-              textShadow: "0 1px 4px rgba(0,0,0,0.85)",
-              transition: "color 0.4s ease",
-              whiteSpace: "nowrap",
-            }}
-          >
+            boxShadow: guidanceStatus === "ready" ? `0 0 0 4px ${guideColor}44` : "none",
+          }} />
+
+          {/* Status label */}
+          <div style={{
+            position: "absolute",
+            top: "calc(10% - 30px)",
+            left: "15%", width: "70%",
+            textAlign: "center",
+            fontFamily: FONT, fontSize: 13, fontWeight: 700,
+            color: guideColor,
+            textShadow: "0 1px 4px rgba(0,0,0,0.9)",
+            letterSpacing: "0.05em",
+            transition: "color 0.4s ease",
+          }}>
             {guideText}
           </div>
+
+          {/* Directional arrows */}
+          {guidanceStatus === "too_far" && (
+            <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", fontSize: 48, color: "#FF5555", textShadow: "0 2px 8px rgba(0,0,0,0.8)" }}>↕</div>
+          )}
+          {guidanceStatus === "too_close" && (
+            <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", fontSize: 48, color: "#FF5555", textShadow: "0 2px 8px rgba(0,0,0,0.8)" }}>↔</div>
+          )}
+          {guidanceStatus === "off_center" && subjectBox && (() => {
+            const cx = (subjectBox.x1 + subjectBox.x2) / 2;
+            const cy = (subjectBox.y1 + subjectBox.y2) / 2;
+            const dx = cx - 0.5;
+            const dy = cy - 0.5;
+            const arrow = Math.abs(dx) > Math.abs(dy)
+              ? (dx < 0 ? "→" : "←")
+              : (dy < 0 ? "↓" : "↑");
+            return (
+              <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", fontSize: 56, color: "#FF5555", textShadow: "0 2px 8px rgba(0,0,0,0.8)" }}>{arrow}</div>
+            );
+          })()}
+
+          {/* Green ready pulse */}
+          {guidanceStatus === "ready" && (
+            <div style={{
+              position: "absolute",
+              top: "10%", left: "15%", width: "70%", height: "80%",
+              borderRadius: 16,
+              background: "rgba(68,204,119,0.08)",
+              animation: "pulse 1s ease-in-out infinite",
+            }} />
+          )}
+          <style>{`@keyframes pulse { 0%,100% { opacity:0.4 } 50% { opacity:1 } }`}</style>
         </div>
       )}
 

@@ -52,6 +52,7 @@ export default function ScanScreen() {
   const [previewUrl, setPreviewUrl] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
   const [guidanceState, setGuidanceState] = useState("idle"); // idle | too_dark | too_bright | no_clothing | too_far | too_close | off_center | ready
+  const [subjectBox, setSubjectBox] = useState(null);
 
   const capturedBase64Ref = useRef(null);
   const captureRef = useRef(null);
@@ -120,8 +121,10 @@ export default function ScanScreen() {
     }, 1000);
   }, [speak, triggerCapture]);
 
-  const handleGuidanceSample = useCallback((_base64, brightness, _videoW, _videoH, { subjectBox } = {}) => {
+  const handleGuidanceSample = useCallback((_base64, brightness, _videoW, _videoH, { subjectBox: sb } = {}) => {
     if (!guidanceActiveRef.current) return;
+    setSubjectBox(sb || null);
+    const subjectBox = sb;
 
     // 1. Lighting — highest priority
     if (brightness < 40) {
@@ -298,6 +301,7 @@ export default function ScanScreen() {
             onGuidanceSample={handleGuidanceSample}
             captureRef={captureRef}
             guidanceStatus={guidanceState}
+            subjectBox={subjectBox}
           />
         </div>
       </>
