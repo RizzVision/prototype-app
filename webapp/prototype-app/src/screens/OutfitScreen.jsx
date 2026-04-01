@@ -33,26 +33,6 @@ export default function OutfitScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    const handler = (e) => {
-      const cmd = e.detail;
-      if (cmd.type === "SELECT_OCCASION" && phase === "occasion") {
-        handleOccasionSelect(cmd.id);
-        speak(OCCASIONS.find(o => o.id === cmd.id)?.label ?? cmd.id);
-      } else if (cmd.type === "SELECT_MOOD" && phase === "mood") {
-        handleMoodSelect(cmd.id);
-        speak(MOODS.find(m => m.id === cmd.id)?.label ?? cmd.id);
-      } else if (cmd.type === "CONFIRM") {
-        if (phase === "occasion" && occasion) proceedToMood();
-        else if (phase === "mood" && mood) generateOutfit();
-      } else if (cmd.type === "READ_RESULT" && phase === "result") {
-        speak(result);
-      }
-    };
-    window.addEventListener("voiceCommand", handler);
-    return () => window.removeEventListener("voiceCommand", handler);
-  }, [phase, occasion, mood, result, handleOccasionSelect, handleMoodSelect, proceedToMood, generateOutfit, speak]);
-
   const handleOccasionSelect = useCallback((id) => {
     setOccasion(id);
   }, []);
@@ -91,6 +71,26 @@ export default function OutfitScreen() {
       setPhase("occasion");
     }
   }, [mood, occasion, items, anchorItem, speak]);
+
+  useEffect(() => {
+    const handler = (e) => {
+      const cmd = e.detail;
+      if (cmd.type === "SELECT_OCCASION" && phase === "occasion") {
+        handleOccasionSelect(cmd.id);
+        speak(OCCASIONS.find(o => o.id === cmd.id)?.label ?? cmd.id);
+      } else if (cmd.type === "SELECT_MOOD" && phase === "mood") {
+        handleMoodSelect(cmd.id);
+        speak(MOODS.find(m => m.id === cmd.id)?.label ?? cmd.id);
+      } else if (cmd.type === "CONFIRM") {
+        if (phase === "occasion" && occasion) proceedToMood();
+        else if (phase === "mood" && mood) generateOutfit();
+      } else if (cmd.type === "READ_RESULT" && phase === "result") {
+        speak(result);
+      }
+    };
+    window.addEventListener("voiceCommand", handler);
+    return () => window.removeEventListener("voiceCommand", handler);
+  }, [phase, occasion, mood, result, handleOccasionSelect, handleMoodSelect, proceedToMood, generateOutfit, speak]);
 
   if (items.length === 0) {
     return (
