@@ -164,6 +164,12 @@ export default function ScanScreen() {
       return;
     }
 
+    // 1.5. Background complexity — non-blocking warning only
+    if (subjectBox?.backgroundVariance > 35) {
+      speakGuidance(RESPONSES.guidance.busyBackground);
+      setGuidanceState("busy_background");
+    }
+
     // 2. Clothing presence
     if (!subjectBox || subjectBox.confidence < 0.15) {
       cancelCountdown();

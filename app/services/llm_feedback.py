@@ -40,6 +40,7 @@ RULES:
 12. When skin tone data is available, weave it naturally into color feedback. Do not make it awkward or clinical.
 13. Reference the detected style archetype if it adds value. Do not force it.
 14. For occasion feedback, mention the best-matching occasion naturally.
+15. Count physically separate garments only. A shirt with a contrast collar, stripes, or colorblock pattern is ONE garment entry. Describe multi-color details within the description field. Only create separate garment entries for items that can be worn independently (e.g., a jacket + jeans).
 
 Return ONLY valid JSON. No markdown. No preamble. No explanation outside the JSON.
 

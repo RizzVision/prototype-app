@@ -13,6 +13,7 @@ export const RESPONSES = {
     countdown2:   "Two.",
     countdown1:   "One.",
     backendOnly:  "Guidance limited. Tap to capture when you are ready.",
+    busyBackground: "Place the garment on a plain, contrasting surface for best results.",
   },
   welcome: "What would you like to do?",
   scanReady: "Camera ready. Hold your outfit up and tap capture, or wait for auto-capture.",

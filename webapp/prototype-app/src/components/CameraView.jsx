@@ -17,6 +17,7 @@ export default function CameraView({ onCapture, onError, autoCapture = false, ca
     if (guidanceStatus === "too_dark" || guidanceStatus === "too_bright") return "#FFD600";
     if (guidanceStatus === "ready") return "#44CC77";
     if (["no_clothing", "off_center", "too_far", "too_close"].includes(guidanceStatus)) return "#FF5555";
+    if (guidanceStatus === "busy_background") return "#FFD600";
     return "#888888";
   })();
 
@@ -28,6 +29,7 @@ export default function CameraView({ onCapture, onError, autoCapture = false, ca
       case "too_far":     return "Move closer";
       case "too_close":   return "Move back";
       case "off_center":  return "Centre the clothing";
+      case "busy_background": return "Use a plain background";
       case "ready":       return "Hold steady…";
       default:            return "Hold clothing here";
     }
@@ -121,6 +123,10 @@ export default function CameraView({ onCapture, onError, autoCapture = false, ca
     background.g /= borderPixels.length;
     background.b /= borderPixels.length;
 
+    const bgVariance = borderPixels.reduce((sum, [r, g, b]) => {
+      return sum + Math.abs(r - background.r) + Math.abs(g - background.g) + Math.abs(b - background.b);
+    }, 0) / (borderPixels.length * 3);
+
     let minX = width;
     let minY = height;
     let maxX = -1;
@@ -151,6 +157,7 @@ export default function CameraView({ onCapture, onError, autoCapture = false, ca
       x2: maxX / width,
       y2: maxY / height,
       confidence: Math.min(1, activePixels / ((width * height) / 18)),
+      backgroundVariance: bgVariance,
     };
   }, []);
 
