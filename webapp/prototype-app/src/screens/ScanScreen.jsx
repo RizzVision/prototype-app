@@ -71,8 +71,6 @@ export default function ScanScreen() {
   const [result, setResult] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
-  const [guidanceState, setGuidanceState] = useState("idle"); // idle | too_dark | too_bright | no_clothing | too_far | too_close | off_center | ready
-  const [subjectBox, setSubjectBox] = useState(null);
 
   const [duplicateInfo, setDuplicateInfo] = useState(null); // { existing, incoming }
 
@@ -80,26 +78,12 @@ export default function ScanScreen() {
   const captureRef = useRef(null);
   const resultHeadingRef = useRef(null);
 
-  // Guidance refs — local brightness only (YOLO removed)
-  const guidanceActiveRef = useRef(true);
-  const guidanceReadyRef = useRef(false);
-  const countdownRef = useRef(null);
-  const lastSpokenRef = useRef({ msg: "", ts: 0 });
-  const DEBOUNCE_MS = 6000;
-
   useEffect(() => {
     if (phase === "camera") {
       speak(RESPONSES.scanReady);
-      announce("Camera ready. Point at your outfit and tap capture.", "polite");
+      announce("Camera ready. Point at your outfit, tap Describe to check framing, then tap Capture.", "polite");
     }
   }, [phase, speak, announce]);
-
-  useEffect(() => {
-    return () => {
-      guidanceActiveRef.current = false;
-      if (countdownRef.current) clearTimeout(countdownRef.current);
-    };
-  }, []);
 
   // Move focus to result heading so screen readers announce it immediately
   useEffect(() => {
@@ -109,119 +93,12 @@ export default function ScanScreen() {
   }, [phase]);
 
 
-  const speakGuidance = useCallback((msg) => {
-    const now = Date.now();
-    if (msg === lastSpokenRef.current.msg && now - lastSpokenRef.current.ts < DEBOUNCE_MS) return;
-    lastSpokenRef.current = { msg, ts: now };
-    speak(msg);
-  }, [speak]);
-
-  const cancelCountdown = useCallback(() => {
-    if (countdownRef.current) { clearTimeout(countdownRef.current); countdownRef.current = null; }
-    guidanceReadyRef.current = false;
-  }, []);
-
-  const triggerCapture = useCallback(() => {
-    if (!guidanceActiveRef.current) return;
-    guidanceActiveRef.current = false;
-    cancelCountdown();
-    if (captureRef.current) captureRef.current();
-  }, [cancelCountdown]);
-
-  const startCountdown = useCallback(() => {
-    if (guidanceReadyRef.current) return;
-    guidanceReadyRef.current = true;
-    speak(RESPONSES.guidance.goodPosition);
-    countdownRef.current = setTimeout(() => {
-      if (!guidanceActiveRef.current) return;
-      speak(RESPONSES.guidance.countdown2);
-      countdownRef.current = setTimeout(() => {
-        if (!guidanceActiveRef.current) return;
-        speak(RESPONSES.guidance.countdown1);
-        countdownRef.current = setTimeout(() => triggerCapture(), 1000);
-      }, 1000);
-    }, 1000);
-  }, [speak, triggerCapture]);
-
-  const handleGuidanceSample = useCallback((_base64, brightness, _videoW, _videoH, { subjectBox: sb } = {}) => {
-    if (!guidanceActiveRef.current) return;
-    setSubjectBox(sb || null);
-    const subjectBox = sb;
-
-    // 1. Lighting — highest priority
-    if (brightness < 40) {
-      cancelCountdown();
-      guidanceReadyRef.current = false;
-      setGuidanceState("too_dark");
-      speakGuidance(RESPONSES.guidance.tooDark);
-      return;
-    }
-    if (brightness > 220) {
-      cancelCountdown();
-      guidanceReadyRef.current = false;
-      setGuidanceState("too_bright");
-      speakGuidance(RESPONSES.guidance.tooBright);
-      return;
-    }
-
-    // 1.5. Background complexity — non-blocking warning only
-    if (subjectBox?.backgroundVariance > 35) {
-      speakGuidance(RESPONSES.guidance.busyBackground);
-      setGuidanceState("busy_background");
-    }
-
-    // 2. Clothing presence
-    if (!subjectBox || subjectBox.confidence < 0.15) {
-      cancelCountdown();
-      guidanceReadyRef.current = false;
-      setGuidanceState("no_clothing");
-      speakGuidance(RESPONSES.guidance.noClothing);
-      return;
-    }
-
-    // 3. Subject size
-    const area = (subjectBox.x2 - subjectBox.x1) * (subjectBox.y2 - subjectBox.y1);
-    if (area < 0.10) {
-      cancelCountdown();
-      guidanceReadyRef.current = false;
-      setGuidanceState("too_far");
-      speakGuidance(RESPONSES.guidance.tooFar);
-      return;
-    }
-    if (area > 0.75) {
-      cancelCountdown();
-      guidanceReadyRef.current = false;
-      setGuidanceState("too_close");
-      speakGuidance(RESPONSES.guidance.tooClose);
-      return;
-    }
-
-    // 4. Centering
-    const centerX = (subjectBox.x1 + subjectBox.x2) / 2;
-    const centerY = (subjectBox.y1 + subjectBox.y2) / 2;
-    if (Math.abs(centerX - 0.5) > 0.25) {
-      cancelCountdown();
-      guidanceReadyRef.current = false;
-      setGuidanceState("off_center");
-      speakGuidance(centerX < 0.5 ? RESPONSES.guidance.moveRight : RESPONSES.guidance.moveLeft);
-      return;
-    }
-    if (Math.abs(centerY - 0.5) > 0.3) {
-      cancelCountdown();
-      guidanceReadyRef.current = false;
-      setGuidanceState("off_center");
-      speakGuidance(centerY < 0.5 ? RESPONSES.guidance.moveDown : RESPONSES.guidance.moveUp);
-      return;
-    }
-
-    // 5. All conditions met — start countdown
-    setGuidanceState("ready");
-    if (!guidanceReadyRef.current) startCountdown();
-  }, [cancelCountdown, speakGuidance, startCountdown]);
+  const handleDescribe = useCallback((description) => {
+    announce(description, "polite");
+    speak(description);
+  }, [speak, announce]);
 
   const handleCapture = useCallback(async (base64, dataUrl) => {
-    guidanceActiveRef.current = false;
-    cancelCountdown();
     setPhase("analyzing");
     setPreviewUrl(dataUrl);
     capturedBase64Ref.current = base64;
@@ -247,7 +124,7 @@ export default function ScanScreen() {
       speak(msg);
       setPhase("error");
     }
-  }, [speak, cancelCountdown, announce]);
+  }, [speak, announce]);
 
   const doSave = useCallback(async () => {
     if (!result) return;
@@ -329,11 +206,7 @@ export default function ScanScreen() {
     setResult(null);
     setPreviewUrl(null);
     setErrorMsg("");
-    setGuidanceState("idle");
     setDuplicateInfo(null);
-    guidanceActiveRef.current = true;
-    guidanceReadyRef.current = false;
-    lastSpokenRef.current = { msg: "", ts: 0 };
     setPhase("camera");
   }, []);
 
@@ -376,11 +249,8 @@ export default function ScanScreen() {
           <CameraView
             onCapture={handleCapture}
             onError={(msg) => { announce(msg, "assertive"); speak(msg); }}
-            guidanceMode={true}
-            onGuidanceSample={handleGuidanceSample}
+            onDescribe={handleDescribe}
             captureRef={captureRef}
-            guidanceStatus={guidanceState}
-            subjectBox={subjectBox}
           />
           {/* Upload button overlay */}
           <div style={{

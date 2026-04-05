@@ -1,39 +1,16 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import { C, FONT } from "../utils/constants";
+import { RESPONSES } from "../voice/voiceResponses";
 
-export default function CameraView({ onCapture, onError, autoCapture = false, captureInterval = 4000, guidanceMode = false, onGuidanceSample, captureRef, guidanceStatus = "idle", subjectBox = null }) {
+export default function CameraView({ onCapture, onError, captureRef, onDescribe }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const guidanceCanvasRef = useRef(null);
   const streamRef = useRef(null);
-  const intervalRef = useRef(null);
-  const guidanceIntervalRef = useRef(null);
   const facingModeRef = useRef("environment");
   const [ready, setReady] = useState(false);
   const [error, setError] = useState(null);
   const [facingMode, setFacingMode] = useState("environment");
-
-  const guideColor = (() => {
-    if (guidanceStatus === "too_dark" || guidanceStatus === "too_bright") return "#FFD600";
-    if (guidanceStatus === "ready") return "#44CC77";
-    if (["no_clothing", "off_center", "too_far", "too_close"].includes(guidanceStatus)) return "#FF5555";
-    if (guidanceStatus === "busy_background") return "#FFD600";
-    return "#888888";
-  })();
-
-  const guideText = (() => {
-    switch (guidanceStatus) {
-      case "too_dark":    return "Too dark — find brighter light";
-      case "too_bright":  return "Too bright — avoid direct light";
-      case "no_clothing": return "Point camera at clothing";
-      case "too_far":     return "Move closer";
-      case "too_close":   return "Move back";
-      case "off_center":  return "Centre the clothing";
-      case "busy_background": return "Use a plain background";
-      case "ready":       return "Hold steady…";
-      default:            return "Hold clothing here";
-    }
-  })();
 
   const startCamera = useCallback(async (facing) => {
     const mode = facing ?? facingModeRef.current;
@@ -56,8 +33,6 @@ export default function CameraView({ onCapture, onError, autoCapture = false, ca
   }, [onError]);
 
   const stopCamera = useCallback(() => {
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    if (guidanceIntervalRef.current) clearInterval(guidanceIntervalRef.current);
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(t => t.stop());
       streamRef.current = null;
@@ -83,14 +58,6 @@ export default function CameraView({ onCapture, onError, autoCapture = false, ca
     ctx.drawImage(video, 0, 0);
     return canvas.toDataURL("image/jpeg", 0.85);
   }, []);
-
-  const handleCapture = useCallback(() => {
-    const dataUrl = captureFrame();
-    if (dataUrl && onCapture) {
-      const base64 = dataUrl.split(",")[1];
-      onCapture(base64, dataUrl);
-    }
-  }, [captureFrame, onCapture]);
 
   const estimateSubjectBox = useCallback((data, width, height) => {
     if (!data || !width || !height) return null;
@@ -123,10 +90,6 @@ export default function CameraView({ onCapture, onError, autoCapture = false, ca
     background.g /= borderPixels.length;
     background.b /= borderPixels.length;
 
-    const bgVariance = borderPixels.reduce((sum, [r, g, b]) => {
-      return sum + Math.abs(r - background.r) + Math.abs(g - background.g) + Math.abs(b - background.b);
-    }, 0) / (borderPixels.length * 3);
-
     let minX = width;
     let minY = height;
     let maxX = -1;
@@ -157,50 +120,67 @@ export default function CameraView({ onCapture, onError, autoCapture = false, ca
       x2: maxX / width,
       y2: maxY / height,
       confidence: Math.min(1, activePixels / ((width * height) / 18)),
-      backgroundVariance: bgVariance,
     };
   }, []);
 
-  const sampleGuidanceFrame = useCallback(() => {
-    if (!videoRef.current || !guidanceCanvasRef.current || !ready) return;
+  const describeWhatsFocused = useCallback(() => {
+    if (!ready || !videoRef.current || !guidanceCanvasRef.current) return;
     const video = videoRef.current;
     const gc = guidanceCanvasRef.current;
     gc.width  = Math.floor(video.videoWidth  / 2);
     gc.height = Math.floor(video.videoHeight / 2);
-    const ctx = gc.getContext("2d");
-    ctx.drawImage(video, 0, 0, gc.width, gc.height);
-    const data = ctx.getImageData(0, 0, gc.width, gc.height).data;
-    let total = 0, count = 0;
-    for (let i = 0; i < data.length; i += 16) {
-      total += (data[i] + data[i + 1] + data[i + 2]) / 3;
-      count++;
+    const ctx2 = gc.getContext("2d");
+    ctx2.drawImage(video, 0, 0, gc.width, gc.height);
+    const imageData = ctx2.getImageData(0, 0, gc.width, gc.height);
+    const box = estimateSubjectBox(imageData.data, gc.width, gc.height);
+
+    let description;
+    if (!box || box.confidence < 0.15) {
+      description = RESPONSES.whatsInFocus.noClothing;
+    } else {
+      const area = (box.x2 - box.x1) * (box.y2 - box.y1);
+      if (area < 0.10)      description = RESPONSES.whatsInFocus.tooSmall;
+      else if (area > 0.75) description = RESPONSES.whatsInFocus.tooLarge;
+      else {
+        const cx = (box.x1 + box.x2) / 2;
+        const cy = (box.y1 + box.y2) / 2;
+        if (Math.abs(cx - 0.5) > 0.25 || Math.abs(cy - 0.5) > 0.3)
+          description = RESPONSES.whatsInFocus.offCenter;
+        else
+          description = RESPONSES.whatsInFocus.ready;
+      }
     }
-    const brightness = count > 0 ? total / count : 128;
-    const base64 = gc.toDataURL("image/jpeg", 0.4).split(",")[1];
-    const subjectBox = estimateSubjectBox(data, gc.width, gc.height);
-    if (onGuidanceSample) {
-      onGuidanceSample(base64, brightness, video.videoWidth, video.videoHeight, { subjectBox });
+    if (onDescribe) onDescribe(description);
+  }, [ready, estimateSubjectBox, onDescribe]);
+
+  const playShutterSound = () => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.setValueAtTime(800, ctx.currentTime);
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.1);
+    } catch (_) {}
+  };
+
+  const handleCapture = useCallback(() => {
+    playShutterSound();
+    const dataUrl = captureFrame();
+    if (dataUrl && onCapture) {
+      const base64 = dataUrl.split(",")[1];
+      onCapture(base64, dataUrl);
     }
-  }, [ready, onGuidanceSample, estimateSubjectBox]);
+  }, [captureFrame, onCapture]);
 
   useEffect(() => {
     startCamera();
     return stopCamera;
   }, [startCamera, stopCamera]);
-
-  useEffect(() => {
-    if (autoCapture && ready) {
-      intervalRef.current = setInterval(handleCapture, captureInterval);
-      return () => clearInterval(intervalRef.current);
-    }
-  }, [autoCapture, ready, handleCapture, captureInterval]);
-
-  useEffect(() => {
-    if (guidanceMode && ready) {
-      guidanceIntervalRef.current = setInterval(sampleGuidanceFrame, 3000);
-      return () => clearInterval(guidanceIntervalRef.current);
-    }
-  }, [guidanceMode, ready, sampleGuidanceFrame]);
 
   useEffect(() => {
     if (captureRef) captureRef.current = handleCapture;
@@ -235,74 +215,19 @@ export default function CameraView({ onCapture, onError, autoCapture = false, ca
       <canvas ref={canvasRef} style={{ display: "none" }} />
       <canvas ref={guidanceCanvasRef} style={{ display: "none" }} />
 
-      {/* Guide frame overlay — visual aid for positioning clothing */}
-      {guidanceMode && (
-        <div aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+      {/* Static target zone — visual framing guide only */}
+      <div aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+        <div style={{
+          position: "absolute",
+          top: "10%", left: "15%", width: "70%", height: "80%",
+          border: "3px solid rgba(255,255,255,0.35)",
+          borderRadius: 16,
+          boxSizing: "border-box",
+        }} />
+      </div>
 
-          {/* Target zone border */}
-          <div style={{
-            position: "absolute",
-            top: "10%", left: "15%", width: "70%", height: "80%",
-            border: `3px solid ${guideColor}`,
-            borderRadius: 16,
-            boxSizing: "border-box",
-            transition: "border-color 0.4s ease",
-            boxShadow: guidanceStatus === "ready" ? `0 0 0 4px ${guideColor}44` : "none",
-          }} />
-
-          {/* Status label */}
-          <div style={{
-            position: "absolute",
-            top: "calc(10% - 30px)",
-            left: "15%", width: "70%",
-            textAlign: "center",
-            fontFamily: FONT, fontSize: 13, fontWeight: 700,
-            color: guideColor,
-            textShadow: "0 1px 4px rgba(0,0,0,0.9)",
-            letterSpacing: "0.05em",
-            transition: "color 0.4s ease",
-          }}>
-            {guideText}
-          </div>
-
-          {/* Directional arrows */}
-          {guidanceStatus === "too_far" && (
-            <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", fontSize: 48, color: "#FF5555", textShadow: "0 2px 8px rgba(0,0,0,0.8)" }}>↕</div>
-          )}
-          {guidanceStatus === "too_close" && (
-            <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", fontSize: 48, color: "#FF5555", textShadow: "0 2px 8px rgba(0,0,0,0.8)" }}>↔</div>
-          )}
-          {guidanceStatus === "off_center" && subjectBox && (() => {
-            const cx = (subjectBox.x1 + subjectBox.x2) / 2;
-            const cy = (subjectBox.y1 + subjectBox.y2) / 2;
-            const dx = cx - 0.5;
-            const dy = cy - 0.5;
-            const arrow = Math.abs(dx) > Math.abs(dy)
-              ? (dx < 0 ? "→" : "←")
-              : (dy < 0 ? "↓" : "↑");
-            return (
-              <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", fontSize: 56, color: "#FF5555", textShadow: "0 2px 8px rgba(0,0,0,0.8)" }}>{arrow}</div>
-            );
-          })()}
-
-          {/* Green ready pulse */}
-          {guidanceStatus === "ready" && (
-            <div style={{
-              position: "absolute",
-              top: "10%", left: "15%", width: "70%", height: "80%",
-              borderRadius: 16,
-              background: "rgba(68,204,119,0.08)",
-              animation: "pulse 1s ease-in-out infinite",
-            }} />
-          )}
-          <style>{`@keyframes pulse { 0%,100% { opacity:0.4 } 50% { opacity:1 } }`}</style>
-        </div>
-      )}
-
-      {/* Flip camera button — always visible when camera is ready */}
-      <div style={{
-        position: "absolute", top: 20, right: 20,
-      }}>
+      {/* Flip camera button */}
+      <div style={{ position: "absolute", top: 20, right: 20 }}>
         <button
           onClick={flipCamera}
           disabled={!ready}
@@ -325,15 +250,35 @@ export default function CameraView({ onCapture, onError, autoCapture = false, ca
         </button>
       </div>
 
-      {(!autoCapture || guidanceMode) && (
-        <div style={{
-          position: "absolute", bottom: 40, left: 0, right: 0,
-          display: "flex", justifyContent: "center",
-        }}>
+      {/* Bottom controls: Describe + Capture */}
+      <div style={{
+        position: "absolute", bottom: 40, left: 0, right: 0,
+        display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
+      }}>
+        <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 28 }}>
+          {/* Describe / What's in Focus button */}
+          <button
+            onClick={describeWhatsFocused}
+            disabled={!ready}
+            aria-label="Describe what is in frame"
+            style={{
+              width: 72, height: 72, borderRadius: "50%",
+              background: ready ? "rgba(0,0,0,0.65)" : C.surface,
+              border: "3px solid rgba(255,255,255,0.7)",
+              cursor: ready ? "pointer" : "not-allowed",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 28, opacity: ready ? 1 : 0.4,
+              boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
+            }}
+          >
+            <span aria-hidden>👁</span>
+          </button>
+
+          {/* Primary capture button */}
           <button
             onClick={handleCapture}
             disabled={!ready}
-            aria-label={guidanceMode ? "Capture photo. Tap to scan now, or wait for auto-capture." : "Capture photo. Tap to scan clothing."}
+            aria-label="Capture photo. Tap to scan clothing."
             style={{
               width: 88, height: 88, borderRadius: "50%",
               background: ready ? C.focus : C.surface,
@@ -347,7 +292,13 @@ export default function CameraView({ onCapture, onError, autoCapture = false, ca
             <span aria-hidden>📸</span>
           </button>
         </div>
-      )}
+
+        {/* Button labels */}
+        <div style={{ display: "flex", justifyContent: "center", gap: 52, paddingTop: 4 }}>
+          <span style={{ fontFamily: FONT, fontSize: 12, color: "rgba(255,255,255,0.7)", width: 72, textAlign: "center" }}>Describe</span>
+          <span style={{ fontFamily: FONT, fontSize: 12, color: "rgba(255,255,255,0.7)", width: 88, textAlign: "center" }}>Capture</span>
+        </div>
+      </div>
 
       {!ready && !error && (
         <div style={{
