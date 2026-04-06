@@ -98,6 +98,25 @@ export default function ScanScreen() {
     speak(description);
   }, [speak, announce]);
 
+  const playSuccessSound = () => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const playNote = (freq, startTime) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.setValueAtTime(freq, startTime);
+        gain.gain.setValueAtTime(0.2, startTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.12);
+        osc.start(startTime);
+        osc.stop(startTime + 0.12);
+      };
+      playNote(880, ctx.currentTime);
+      playNote(660, ctx.currentTime + 0.1);
+    } catch (_) {}
+  };
+
   const handleCapture = useCallback(async (base64, dataUrl) => {
     setPhase("analyzing");
     setPreviewUrl(dataUrl);
@@ -107,6 +126,7 @@ export default function ScanScreen() {
 
     try {
       const analysis = await analyzeOutfit(base64);
+      playSuccessSound();
       setResult(analysis);
       setPhase("result");
 

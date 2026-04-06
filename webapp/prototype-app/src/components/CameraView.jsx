@@ -139,32 +139,49 @@ export default function CameraView({ onCapture, onError, captureRef, onDescribe 
       description = RESPONSES.whatsInFocus.noClothing;
     } else {
       const area = (box.x2 - box.x1) * (box.y2 - box.y1);
-      if (area < 0.10)      description = RESPONSES.whatsInFocus.tooSmall;
-      else if (area > 0.75) description = RESPONSES.whatsInFocus.tooLarge;
-      else {
-        const cx = (box.x1 + box.x2) / 2;
-        const cy = (box.y1 + box.y2) / 2;
-        if (Math.abs(cx - 0.5) > 0.25 || Math.abs(cy - 0.5) > 0.3)
-          description = RESPONSES.whatsInFocus.offCenter;
-        else
-          description = RESPONSES.whatsInFocus.ready;
-      }
+      if (area < 0.06)      description = RESPONSES.whatsInFocus.tooSmall;
+      else if (area > 0.85) description = RESPONSES.whatsInFocus.tooLarge;
+      else                  description = RESPONSES.whatsInFocus.ready;
     }
+    if (description === RESPONSES.whatsInFocus.ready) playReadyChime();
     if (onDescribe) onDescribe(description);
   }, [ready, estimateSubjectBox, onDescribe]);
 
   const playShutterSound = () => {
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.frequency.setValueAtTime(800, ctx.currentTime);
-      gain.gain.setValueAtTime(0.3, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.1);
+      const playClick = (freq, startTime, gainVal) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.setValueAtTime(freq, startTime);
+        gain.gain.setValueAtTime(gainVal, startTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.04);
+        osc.start(startTime);
+        osc.stop(startTime + 0.04);
+      };
+      playClick(1200, ctx.currentTime, 0.4);
+      playClick(900, ctx.currentTime + 0.05, 0.3);
+    } catch (_) {}
+  };
+
+  const playReadyChime = () => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const playNote = (freq, startTime) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.setValueAtTime(freq, startTime);
+        gain.gain.setValueAtTime(0.25, startTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.08);
+        osc.start(startTime);
+        osc.stop(startTime + 0.08);
+      };
+      playNote(523, ctx.currentTime);
+      playNote(659, ctx.currentTime + 0.08);
     } catch (_) {}
   };
 
@@ -295,7 +312,7 @@ export default function CameraView({ onCapture, onError, captureRef, onDescribe 
 
         {/* Button labels */}
         <div style={{ display: "flex", justifyContent: "center", gap: 52, paddingTop: 4 }}>
-          <span style={{ fontFamily: FONT, fontSize: 12, color: "rgba(255,255,255,0.7)", width: 72, textAlign: "center" }}>Describe</span>
+          <span style={{ fontFamily: FONT, fontSize: 12, color: "rgba(255,255,255,0.7)", width: 72, textAlign: "center" }}>What's in Focus</span>
           <span style={{ fontFamily: FONT, fontSize: 12, color: "rgba(255,255,255,0.7)", width: 88, textAlign: "center" }}>Capture</span>
         </div>
       </div>

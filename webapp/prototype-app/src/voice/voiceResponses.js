@@ -18,10 +18,9 @@ export const RESPONSES = {
   welcome: "What would you like to do?",
   whatsInFocus: {
     noClothing: "No clothing detected. Point the camera at the garment.",
-    tooSmall:   "Object detected but too small. Move closer.",
-    tooLarge:   "Object too large. Move back slightly.",
-    offCenter:  "Clothing detected but off-centre. Try centring it.",
-    ready:      "Clothing detected and well-positioned. Ready to capture.",
+    tooSmall:   "Object too small. Move the camera closer.",
+    tooLarge:   "Object too large. Move the camera back a little.",
+    ready:      "Clothing in frame. Ready to capture.",
   },
   scanReady: "Camera ready. Point at your outfit, tap Describe to check framing, then tap Capture.",
   analyzing: "Analyzing your outfit. This will take a few seconds.",
