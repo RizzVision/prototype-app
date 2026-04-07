@@ -20,7 +20,6 @@ import { useApp } from "../contexts/AppContext";
 import { useVoice } from "../contexts/VoiceContext";
 import { useWardrobe } from "../contexts/WardrobeContext";
 import { analyzeOutfit, ImageQualityError } from "../services/rizzVisionApi";
-import { uploadClothingImage } from "../utils/storage";
 import { SCREENS, C, FONT } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
 
@@ -131,6 +130,18 @@ export default function ScanScreen() {
 
     try {
       const analysis = await analyzeOutfit(base64);
+      const garments = analysis.raw?.garment_details || [];
+
+      // If multiple garments detected, reject and ask user to scan one at a time
+      if (garments.length > 1) {
+        const msg = `I can see ${garments.length} items in this photo. Please scan one clothing item at a time for accurate wardrobe entries.`;
+        announce(msg, "assertive");
+        speak(msg);
+        setPhase("error");
+        setErrorMsg(msg);
+        return;
+      }
+
       playSuccessSound();
       setResult(analysis);
       setPhase("result");
@@ -158,51 +169,43 @@ export default function ScanScreen() {
 
     const names = namesOverride ?? customNames;
 
-    let imageUrl = null;
-    try {
-      if (capturedBase64Ref.current) imageUrl = await uploadClothingImage(capturedBase64Ref.current);
-    } catch {
-      const msg = "Could not save image. Item saved without a photo.";
-      announce(msg, "polite");
-      speak(msg);
+    // Build a rich 1-2 line description for the single garment from the analysis segments.
+    // garments segment = what it is; color_feedback = how it reads on skin; fit_feedback = silhouette/occasion.
+    // We compose: "[garments text]. [color_feedback first sentence]. [fit_feedback first sentence]."
+    const segMap = {};
+    for (const seg of result.speech_segments || []) segMap[seg.id] = seg.text;
+
+    function firstSentence(text) {
+      if (!text) return "";
+      const m = text.match(/[^.!?]+[.!?]/);
+      return m ? m[0].trim() : text.split(" ").slice(0, 18).join(" ");
     }
 
+    const garmentLine = segMap["garments"] || "";
+    const colorLine = firstSentence(segMap["color_feedback"] || "");
+    const fitLine = firstSentence(segMap["fit_feedback"] || "");
+    const richDescription = [garmentLine, colorLine, fitLine]
+      .filter(Boolean)
+      .join(" ")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+
     const garments = result.raw?.garment_details || [];
-    const fullDescription = result.speech_segments?.map((s) => s.text).join("  ") || "";
+    const g = garments[0]; // always single garment at this point
+
     try {
-      if (garments.length === 0) {
-        await addItem({
-          name: names[0]?.customName || "Outfit",
-          type: "outfit",
-          category: "tops",
-          color: "#000000",
-          colorDescription: "",
-          pattern: "solid",
-          gender: "unisex",
-          description: fullDescription,
-          imageUrl,
-        });
-      } else {
-        for (let i = 0; i < garments.length; i++) {
-          const g = garments[i];
-          const customName = names[i]?.customName;
-          await addItem({
-            name: customName || g.display_name || g.label || "Item",
-            type: g.label || "outfit",
-            category: inferCategory(g.label),
-            color: g.hex_color || "#000000",
-            colorDescription: g.color_name || "",
-            pattern: g.pattern || "solid",
-            gender: "unisex",
-            description: fullDescription,
-            imageUrl,
-          });
-        }
-      }
-      const count = Math.max(garments.length, 1);
-      const savedMsg = count > 1
-        ? `${count} items saved to your wardrobe.`
-        : RESPONSES.saved(names[0]?.customName || garments[0]?.display_name || "item");
+      await addItem({
+        name: names[0]?.customName || g?.display_name || g?.label || "Item",
+        type: g?.label || "item",
+        category: inferCategory(g?.label),
+        color: g?.hex_color || "#000000",
+        colorDescription: g?.color_name || "",
+        pattern: "solid",
+        gender: "unisex",
+        description: richDescription,
+      });
+
+      const savedMsg = RESPONSES.saved(names[0]?.customName || g?.display_name || "item");
       speak(savedMsg);
       announce(savedMsg, "polite");
       setTimeout(() => navigate(SCREENS.WARDROBE), 1500);
@@ -215,8 +218,10 @@ export default function ScanScreen() {
   const handleSave = useCallback(() => {
     if (!result) return;
     const garments = result.raw?.garment_details || [];
-    // Check each garment for a duplicate in the wardrobe
-    for (const g of garments) {
+    const g = garments[0];
+
+    // Check for duplicate
+    if (g) {
       const match = findDuplicate(g, wardrobeItems);
       if (match) {
         const incomingName = g.display_name || g.label || "this item";
@@ -228,14 +233,15 @@ export default function ScanScreen() {
         return;
       }
     }
-    // Go to naming phase before saving
-    const initial = (garments.length > 0 ? garments : [{ display_name: "Outfit", label: "outfit" }])
-      .map((g) => ({ garment: g, customName: "" }));
+
+    // Go to naming phase
+    const detectedName = g?.color_name
+      ? `${g.color_name} ${g.display_name || g.label || "item"}`
+      : g?.display_name || g?.label || "item";
+    const initial = [{ garment: g || {}, customName: "" }];
     setCustomNames(initial);
     setNamingIndex(0);
-    const firstName = initial[0]?.garment?.display_name || initial[0]?.garment?.label || "item";
-    const firstName2 = initial[0]?.garment?.color_name ? `${initial[0].garment.color_name} ${firstName}` : firstName;
-    const msg = `Before saving, would you like to give this a custom name? For example: white polo, black t-shirt, or camo cargo pants. Recommended format is description then clothing type. Leave blank to keep the detected name: ${firstName2}.`;
+    const msg = `Before saving, would you like to give this a custom name? For example: white polo, black t-shirt, or camo cargo pants. Leave blank to keep the detected name: ${detectedName}.`;
     speak(msg);
     announce(msg, "polite");
     setPhase("naming");
@@ -438,15 +444,13 @@ export default function ScanScreen() {
             variant="success"
             onClick={() => {
               setDuplicateInfo(null);
-              const garments = result.raw?.garment_details || [];
-              const initial = (garments.length > 0 ? garments : [{ display_name: "Outfit", label: "outfit" }])
-                .map((g) => ({ garment: g, customName: "" }));
-              setCustomNames(initial);
+              const g = result.raw?.garment_details?.[0];
+              const detectedName = g?.color_name
+                ? `${g.color_name} ${g.display_name || g.label || "item"}`
+                : g?.display_name || g?.label || "item";
+              setCustomNames([{ garment: g || {}, customName: "" }]);
               setNamingIndex(0);
-              const firstName = initial[0]?.garment?.color_name
-                ? `${initial[0].garment.color_name} ${initial[0].garment.display_name || initial[0].garment.label || "item"}`
-                : initial[0]?.garment?.display_name || "item";
-              const msg = `Would you like a custom name for this item? Detected as: ${firstName}. Leave blank to keep it.`;
+              const msg = `Would you like a custom name for this item? Detected as: ${detectedName}. Leave blank to keep it.`;
               speak(msg);
               announce(msg, "polite");
               setPhase("naming");
@@ -482,65 +486,43 @@ export default function ScanScreen() {
 
   // ── Custom Naming ──────────────────────────────────────────────────────────
   if (phase === "naming" && customNames.length > 0) {
-    const current = customNames[namingIndex];
+    const current = customNames[0];
     const garment = current?.garment;
     const detectedName = garment?.color_name
       ? `${garment.color_name} ${garment.display_name || garment.label || "item"}`
       : garment?.display_name || garment?.label || "item";
-    const isLast = namingIndex === customNames.length - 1;
-    const total = customNames.length;
 
     const commitName = (value) => {
-      const updated = customNames.map((n, i) =>
-        i === namingIndex ? { ...n, customName: value.trim() } : n
-      );
-      setCustomNames(updated);
-      if (!isLast) {
-        const next = updated[namingIndex + 1];
-        const nextDetected = next?.garment?.color_name
-          ? `${next.garment.color_name} ${next.garment.display_name || next.garment.label || "item"}`
-          : next?.garment?.display_name || next?.garment?.label || "item";
-        const msg = `Item ${namingIndex + 1} named. Now, would you like a custom name for the next item? Detected as: ${nextDetected}. Leave blank to keep it.`;
-        speak(msg);
-        announce(msg, "polite");
-        setNamingIndex(namingIndex + 1);
-      } else {
-        doSave(updated);
-      }
+      const updated = [{ ...current, customName: value.trim() }];
+      doSave(updated);
     };
 
     return (
-      <Screen
-        title={total > 1 ? `Name Item ${namingIndex + 1} of ${total}` : "Name Your Item"}
-        subtitle="Optional: give it a custom name"
-      >
+      <Screen title="Name Your Item" subtitle="Optional — you can skip this">
         <LiveRegions />
         <div
           role="region"
-          aria-label={`Custom naming for item ${namingIndex + 1} of ${total}`}
+          aria-label="Custom name for this clothing item"
           style={{ marginBottom: 20 }}
         >
           <p style={{ fontFamily: FONT, fontSize: 15, color: C.muted, lineHeight: 1.7, marginBottom: 8 }}>
             Detected as: <strong style={{ color: C.text }}>{detectedName}</strong>
           </p>
           <p style={{ fontFamily: FONT, fontSize: 14, color: C.muted, lineHeight: 1.6, marginBottom: 16 }}>
-            Tip: use description + clothing type — e.g. <em style={{ color: C.focus }}>white polo</em>, <em style={{ color: C.focus }}>black t-shirt</em>, <em style={{ color: C.focus }}>camo cargo pants</em>.
+            Tip: description + clothing type — e.g. <em style={{ color: C.focus }}>white polo</em>, <em style={{ color: C.focus }}>black t-shirt</em>, <em style={{ color: C.focus }}>camo cargo pants</em>.
           </p>
           <input
             ref={nameInputRef}
             type="text"
             value={current?.customName ?? ""}
             onChange={(e) => {
-              const updated = customNames.map((n, i) =>
-                i === namingIndex ? { ...n, customName: e.target.value } : n
-              );
-              setCustomNames(updated);
+              setCustomNames([{ ...current, customName: e.target.value }]);
             }}
             onKeyDown={(e) => {
               if (e.key === "Enter") commitName(current?.customName ?? "");
             }}
             placeholder={`e.g. ${detectedName}`}
-            aria-label={`Custom name for item ${namingIndex + 1}. Currently detected as ${detectedName}. Leave blank to keep detected name.`}
+            aria-label={`Custom name for this item. Detected as ${detectedName}. Leave blank to keep detected name.`}
             style={{
               width: "100%",
               boxSizing: "border-box",
@@ -559,11 +541,9 @@ export default function ScanScreen() {
           />
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <BigButton
-              label={isLast ? "Save to Wardrobe" : "Next Item"}
-              hint={isLast
-                ? `Save with name: ${current?.customName?.trim() || detectedName}`
-                : `Confirm this name and move to item ${namingIndex + 2}`}
-              icon={isLast ? "✓" : "→"}
+              label="Save to Wardrobe"
+              hint={`Save with name: ${current?.customName?.trim() || detectedName}`}
+              icon="✓"
               variant="success"
               onClick={() => commitName(current?.customName ?? "")}
             />

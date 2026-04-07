@@ -41,7 +41,7 @@ export default function WardrobeScreen() {
 
   const handleDelete = useCallback((id) => {
     const item = items.find(i => i.id === id);
-    removeItem(id, item?.imageUrl);
+    removeItem(id);
     if (item) speak(RESPONSES.itemDeleted(item.name));
   }, [items, removeItem, speak]);
 
