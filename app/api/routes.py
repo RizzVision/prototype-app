@@ -28,19 +28,7 @@ router = APIRouter()
 def _engine_to_raw(engine) -> dict:
     """Serialize ColorEngineResult to a JSON-safe dict for the raw field."""
     return {
-        "overall_score": engine.overall_score,
-        "overall_label": engine.overall_label,
         "garment_details": engine.garment_details,
-        "harmony": {
-            "hue_score": engine.harmony.hue_score,
-            "hue_pattern": engine.harmony.hue_pattern,
-            "lightness_score": engine.harmony.lightness_score,
-            "saturation_score": engine.harmony.saturation_score,
-            "temperature_score": engine.harmony.temperature_score,
-            "contrast_score": engine.harmony.contrast_score,
-            "mutual_enhancement": engine.harmony.mutual_enhancement,
-            "pairwise": engine.harmony.pairwise,
-        },
         "skin": {
             "detected": engine.skin.detected,
             "hex_color": engine.skin.hex_color,
@@ -50,13 +38,6 @@ def _engine_to_raw(engine) -> dict:
             "season": engine.skin.season,
             "ita_angle": engine.skin.ita_angle,
             "garment_scores": engine.skin.garment_scores,
-        },
-        "seasonal": {
-            "season": engine.seasonal.season,
-            "sub_type": engine.seasonal.sub_type,
-            "overall_compatibility": engine.seasonal.overall_compatibility,
-            "per_garment": engine.seasonal.per_garment,
-            "palette_suggestions": engine.seasonal.palette_suggestions,
         },
         "proportion": {
             "score": engine.proportion.score,
@@ -69,17 +50,16 @@ def _engine_to_raw(engine) -> dict:
             "formality_level": engine.occasion.formality_level,
             "formality_score": engine.occasion.formality_score,
             "best_occasion": engine.occasion.best_occasion,
-            "occasions": [
-                {"occasion": o.occasion, "score": o.score, "reasoning": o.reasoning}
+            "suitable_occasions": [
+                {"occasion": o.occasion, "score": o.score}
                 for o in engine.occasion.occasions
             ],
         },
         "style": {
             "primary_archetype": engine.style.primary_archetype,
-            "archetype_confidence": engine.style.archetype_confidence,
+            "top_archetypes": engine.style.top_archetypes,
             "coherence_score": engine.style.coherence_score,
             "description": engine.style.description,
-            "archetype_scores": engine.style.archetype_scores,
         },
         "flags": engine.all_flags,
         "flag_messages": engine.flag_messages,
@@ -95,15 +75,12 @@ async def analyze_outfit(image: UploadFile = File(...)):
     Accepts: multipart/form-data with an 'image' file field.
 
     Returns:
-        speech_segments   - Ordered TTS segments [{id, text}]
-        color_score       - Master engine score (0-1)
-        color_label       - Score label (excellent/good/decent/needs work/poor)
-        harmony_pattern   - Detected hue harmony pattern
-        best_occasion     - Best occasion suitability
-        style_archetype   - Detected style archetype
-        skin_detected     - Whether skin tone was analysed
-        latency_ms        - Total processing time in ms
-        raw               - Full analysis data for debugging/frontend
+        speech_segments    - Ordered TTS segments [{id, text}]
+        suitable_occasions - All occasions this outfit works for
+        top_archetypes     - All matching style archetypes
+        skin_detected      - Whether skin tone was analysed
+        latency_ms         - Total processing time in ms
+        raw                - Full analysis data for debugging/frontend
     """
     start_time = time.time()
 
@@ -147,11 +124,8 @@ async def analyze_outfit(image: UploadFile = File(...)):
 
     response = {
         "speech_segments": speech_segments,
-        "color_score": engine_result.overall_score,
-        "color_label": engine_result.overall_label,
-        "harmony_pattern": engine_result.harmony.hue_pattern,
-        "best_occasion": engine_result.occasion.best_occasion,
-        "style_archetype": engine_result.style.primary_archetype,
+        "suitable_occasions": [o.occasion for o in engine_result.occasion.occasions],
+        "top_archetypes": engine_result.style.top_archetypes,
         "skin_detected": engine_result.skin.detected,
         "latency_ms": latency_ms,
         "raw": _engine_to_raw(engine_result),
@@ -159,9 +133,8 @@ async def analyze_outfit(image: UploadFile = File(...)):
 
     logger.info(
         f"Analysis complete in {latency_ms}ms | "
-        f"score={engine_result.overall_score} ({engine_result.overall_label}) | "
-        f"occasion={engine_result.occasion.best_occasion} | "
-        f"style={engine_result.style.primary_archetype}"
+        f"occasions={[o.occasion for o in engine_result.occasion.occasions]} | "
+        f"styles={engine_result.style.top_archetypes}"
     )
     return response
 
@@ -248,9 +221,8 @@ Your response is read aloud. Every sentence must be under 15 words. No markdown.
 Use concrete, tactile language. Never say "looks good" — say WHY.
 
 Item detected: {garment_names}
-Color score: {engine_result.overall_score:.2f} ({engine_result.overall_label})
-Best occasion: {engine_result.occasion.best_occasion}
-Style: {engine_result.style.primary_archetype}
+Suitable occasions: {", ".join(o.occasion for o in engine_result.occasion.occasions)}
+Style: {", ".join(engine_result.style.top_archetypes)}
 
 {wardrobe_section}
 
@@ -302,20 +274,20 @@ Return ONLY valid JSON:
 
     latency_ms = int((time.time() - start_time) * 1000)
 
+    suitable_occasions = [o.occasion for o in engine_result.occasion.occasions]
+
     # Store context for potential follow-up
     analysis_context = (
         f"Item: {garment_names}. "
-        f"Score: {engine_result.overall_score:.2f} ({engine_result.overall_label}). "
-        f"Occasion: {engine_result.occasion.best_occasion}. "
+        f"Suitable for: {', '.join(suitable_occasions)}. "
+        f"Style: {', '.join(engine_result.style.top_archetypes)}. "
         f"Assessment: {data.get('item_description', '')} {data.get('wardrobe_match', '')}"
     )
 
     return {
         "speech_segments": speech_segments,
-        "color_score": engine_result.overall_score,
-        "color_label": engine_result.overall_label,
-        "best_occasion": engine_result.occasion.best_occasion,
-        "style_archetype": engine_result.style.primary_archetype,
+        "suitable_occasions": suitable_occasions,
+        "top_archetypes": engine_result.style.top_archetypes,
         "has_wardrobe": has_wardrobe,
         "analysis_context": analysis_context,
         "latency_ms": latency_ms,

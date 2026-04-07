@@ -18,11 +18,6 @@ import { analyzeOutfit, ImageQualityError } from "../services/rizzVisionApi";
 import { C, FONT } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
 
-function scoreColor(score) {
-  if (score >= 0.65) return C.success;
-  if (score >= 0.45) return C.focus;
-  return C.danger;
-}
 
 export default function MirrorScreen() {
   const { speak } = useVoice();
@@ -207,11 +202,8 @@ export default function MirrorScreen() {
   }
 
   // ── Result ─────────────────────────────────────────────────────────────────
-  const score = result?.color_score ?? 0;
-  const sc = scoreColor(score);
-  const scoreLabel = result?.color_label || "";
-  const occasion = result?.best_occasion || "";
-  const archetype = result?.style_archetype || "";
+  const occasions = result?.suitable_occasions ?? [];
+  const archetypes = result?.top_archetypes ?? [];
 
   return (
     <Screen title="Auditory Mirror" subtitle="Instant feedback — not saved to wardrobe.">
@@ -220,7 +212,7 @@ export default function MirrorScreen() {
       <h2
         ref={resultRef}
         tabIndex={-1}
-        aria-label={`Analysis complete. Color score: ${scoreLabel}, ${Math.round(score * 100)} percent. Best occasion: ${occasion}.`}
+        aria-label={`Analysis complete. Works for: ${occasions.join(", ") || "various occasions"}.`}
         style={{ position: "absolute", left: -9999, top: "auto", width: 1, height: 1, overflow: "hidden" }}
       />
 
@@ -232,47 +224,35 @@ export default function MirrorScreen() {
         />
       )}
 
-      {/* Score + Occasion */}
-      <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
-        <div style={{
-          flex: 1, background: C.surface, borderRadius: 14, padding: "14px 16px",
-          border: `2px solid ${sc}`, textAlign: "center",
-        }}>
-          <div style={{ fontFamily: FONT, fontSize: 11, color: C.muted, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 4 }}>
-            Color Score
-          </div>
-          <div style={{ fontFamily: FONT, fontSize: 28, fontWeight: 700, color: sc }}>
-            {Math.round(score * 100)}%
-          </div>
-          <div style={{ fontFamily: FONT, fontSize: 13, color: C.muted, textTransform: "capitalize" }}>
-            {scoreLabel}
-          </div>
-        </div>
-
-        {occasion && (
-          <div style={{
-            flex: 1, background: C.surface, borderRadius: 14, padding: "14px 16px",
-            border: `1px solid ${C.border}`, textAlign: "center",
-          }}>
-            <div style={{ fontFamily: FONT, fontSize: 11, color: C.muted, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 4 }}>
-              Best For
+      {/* Occasions + Archetypes */}
+      {(occasions.length > 0 || archetypes.length > 0) && (
+        <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+          {occasions.length > 0 && (
+            <div style={{
+              flex: 1, background: C.surface, borderRadius: 14, padding: "14px 16px",
+              border: `1px solid ${C.border}`,
+            }}>
+              <div style={{ fontFamily: FONT, fontSize: 11, color: C.muted, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 6 }}>
+                Works for
+              </div>
+              {occasions.map((occ) => (
+                <div key={occ} style={{ fontFamily: FONT, fontSize: 13, color: C.text, lineHeight: 1.6 }}>{occ}</div>
+              ))}
             </div>
-            <div style={{ fontFamily: FONT, fontSize: 15, fontWeight: 600, color: C.text, lineHeight: 1.3 }}>
-              {occasion}
+          )}
+          {archetypes.length > 0 && (
+            <div style={{
+              flex: 1, background: C.surface, borderRadius: 14, padding: "14px 16px",
+              border: `1px solid ${C.border}`,
+            }}>
+              <div style={{ fontFamily: FONT, fontSize: 11, color: C.muted, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 6 }}>
+                Style
+              </div>
+              {archetypes.map((arch) => (
+                <div key={arch} style={{ fontFamily: FONT, fontSize: 13, color: C.text, lineHeight: 1.6 }}>{arch}</div>
+              ))}
             </div>
-          </div>
-        )}
-      </div>
-
-      {/* Style archetype */}
-      {archetype && (
-        <div style={{
-          background: C.surface, borderRadius: 12, padding: "10px 16px",
-          border: `1px solid ${C.border}`, marginBottom: 14,
-          display: "flex", alignItems: "center", gap: 12,
-        }}>
-          <span style={{ fontFamily: FONT, fontSize: 12, color: C.muted }}>Style</span>
-          <span style={{ fontFamily: FONT, fontSize: 15, color: C.text, fontWeight: 600 }}>{archetype}</span>
+          )}
         </div>
       )}
 

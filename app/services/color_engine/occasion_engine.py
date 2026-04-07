@@ -343,9 +343,15 @@ def analyze_occasion(
     # ── 3. Build result ──────────────────────────────────────────────────────
     formality_level, formality_score = _formality_from_scores(raw_scores)
 
-    best_key = max(raw_scores, key=raw_scores.get)
+    # Sort all occasions by score
+    sorted_occasions = sorted(raw_scores.items(), key=lambda x: -x[1])
+    best_key, best_score = sorted_occasions[0]
     best_display = OCCASION_DISPLAY.get(best_key, best_key)
 
+    # Include all occasions that score at least 60% of the top score,
+    # so a versatile item (e.g. a plain white shirt) gets multiple valid occasions
+    # rather than being forced into one bucket.
+    threshold = best_score * 0.60
     occasions = [
         OccasionScore(
             occasion=OCCASION_DISPLAY.get(k, k),
@@ -356,7 +362,8 @@ def analyze_occasion(
                 else "Estimated from color analysis"
             ),
         )
-        for k, v in sorted(raw_scores.items(), key=lambda x: -x[1])
+        for k, v in sorted_occasions
+        if v >= threshold
     ]
 
     result = OccasionResult(
@@ -369,7 +376,8 @@ def analyze_occasion(
     )
 
     logger.info(
-        f"Occasion [{source}]: best={best_display} ({raw_scores[best_key]:.1%}), "
+        f"Occasion [{source}]: top={best_display} ({best_score:.1%}), "
+        f"suitable for {len(occasions)} occasions, "
         f"formality={formality_score:.2f} ({formality_level})"
     )
     return result

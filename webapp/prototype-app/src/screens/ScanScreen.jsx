@@ -24,11 +24,6 @@ import { uploadClothingImage } from "../utils/storage";
 import { SCREENS, C, FONT } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
 
-function scoreColor(score) {
-  if (score >= 0.65) return C.success;
-  if (score >= 0.45) return C.focus;
-  return C.danger;
-}
 
 function hexDistance(a, b) {
   if (!a || !b) return 999;
@@ -448,21 +443,18 @@ export default function ScanScreen() {
   }
 
   // ── Result ─────────────────────────────────────────────────────────────────
-  const score = result?.color_score ?? 0;
-  const sc = scoreColor(score);
-  const scoreLabel = result?.color_label || "unknown";
-  const occasion = result?.best_occasion || "";
-  const archetype = result?.style_archetype || "";
+  const occasions = result?.suitable_occasions ?? [];
+  const archetypes = result?.top_archetypes ?? [];
 
   return (
-    <Screen title="Outfit Analysis" subtitle={`Color score: ${scoreLabel}`}>
+    <Screen title="Outfit Analysis" subtitle={occasions[0] || "Analysis complete"}>
       <LiveRegions />
 
       {/* Hidden heading receives focus to announce result to screen readers */}
       <h2
         ref={resultHeadingRef}
         tabIndex={-1}
-        aria-label={`Analysis complete. Color score: ${scoreLabel}, ${Math.round(score * 100)} percent.`}
+        aria-label={`Analysis complete. Works for: ${occasions.join(", ") || "various occasions"}.`}
         style={{ position: "absolute", left: -9999, top: "auto", width: 1, height: 1, overflow: "hidden" }}
       />
 
@@ -474,37 +466,35 @@ export default function ScanScreen() {
         />
       )}
 
-      {/* Color Score */}
-      <div
-        role="region"
-        aria-label={`Color score ${Math.round(score * 100)} percent, ${scoreLabel}.`}
-        style={{ marginBottom: 14 }}
-      >
-        <div style={{
-          background: C.surface, borderRadius: 14, padding: "14px 16px",
-          border: `2px solid ${sc}`, textAlign: "center",
-        }}>
-          <div style={{ fontFamily: FONT, fontSize: 11, color: C.muted, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 4 }}>
-            Color Score
-          </div>
-          <div style={{ fontFamily: FONT, fontSize: 28, fontWeight: 700, color: sc }}>
-            {Math.round(score * 100)}%
-          </div>
-          <div style={{ fontFamily: FONT, fontSize: 13, color: C.muted, textTransform: "capitalize" }}>
-            {scoreLabel}
-          </div>
-        </div>
-      </div>
-
-      {/* Style archetype pill */}
-      {archetype && (
-        <div style={{
-          background: C.surface, borderRadius: 12, padding: "10px 16px",
-          border: `1px solid ${C.border}`, marginBottom: 14,
-          display: "flex", alignItems: "center", gap: 12,
-        }}>
-          <span style={{ fontFamily: FONT, fontSize: 12, color: C.muted }}>Style</span>
-          <span style={{ fontFamily: FONT, fontSize: 15, color: C.text, fontWeight: 600 }}>{archetype}</span>
+      {/* Occasions + Archetypes */}
+      {(occasions.length > 0 || archetypes.length > 0) && (
+        <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+          {occasions.length > 0 && (
+            <div style={{
+              flex: 1, background: C.surface, borderRadius: 14, padding: "14px 16px",
+              border: `1px solid ${C.border}`,
+            }}>
+              <div style={{ fontFamily: FONT, fontSize: 11, color: C.muted, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 6 }}>
+                Works for
+              </div>
+              {occasions.map((occ) => (
+                <div key={occ} style={{ fontFamily: FONT, fontSize: 13, color: C.text, lineHeight: 1.6 }}>{occ}</div>
+              ))}
+            </div>
+          )}
+          {archetypes.length > 0 && (
+            <div style={{
+              flex: 1, background: C.surface, borderRadius: 14, padding: "14px 16px",
+              border: `1px solid ${C.border}`,
+            }}>
+              <div style={{ fontFamily: FONT, fontSize: 11, color: C.muted, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 6 }}>
+                Style
+              </div>
+              {archetypes.map((arch) => (
+                <div key={arch} style={{ fontFamily: FONT, fontSize: 13, color: C.text, lineHeight: 1.6 }}>{arch}</div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

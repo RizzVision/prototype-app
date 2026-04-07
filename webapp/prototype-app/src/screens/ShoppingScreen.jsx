@@ -21,12 +21,6 @@ import { analyzeForShopping, askShoppingFollowUp, ImageQualityError } from "../s
 import { C, FONT } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
 
-function scoreColor(score) {
-  if (score >= 0.65) return C.success;
-  if (score >= 0.45) return C.focus;
-  return C.danger;
-}
-
 export default function ShoppingScreen() {
   const { speak } = useVoice();
   const { announce, LiveRegions } = useAnnounce();
@@ -118,7 +112,6 @@ export default function ShoppingScreen() {
     return () => window.removeEventListener("voiceCommand", handler);
   }, [scanning, toggleScanning, speakLastResult]);
 
-  const sc = result ? scoreColor(result.color_score ?? 0) : C.muted;
   const emptyWardrobe = wardrobeItems.length === 0;
 
   return (
@@ -201,38 +194,41 @@ export default function ShoppingScreen() {
 
           {result ? (
             <>
-              {/* Score card */}
-              <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
-                <div
-                  aria-label={`Color score ${Math.round((result.color_score ?? 0) * 100)} percent, ${result.color_label}`}
-                  style={{
-                    background: C.surface, borderRadius: 12, padding: "10px 14px",
-                    border: `2px solid ${sc}`, textAlign: "center", flex: 1,
-                  }}
-                >
-                  <div style={{ fontFamily: FONT, fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em" }}>Score</div>
-                  <div style={{ fontFamily: FONT, fontSize: 22, fontWeight: 700, color: sc }}>
-                    {Math.round((result.color_score ?? 0) * 100)}%
-                  </div>
-                  <div style={{ fontFamily: FONT, fontSize: 12, color: C.muted, textTransform: "capitalize" }}>
-                    {result.color_label}
-                  </div>
+              {/* Occasions + Styles */}
+              {(result.suitable_occasions?.length > 0 || result.top_archetypes?.length > 0) && (
+                <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+                  {result.suitable_occasions?.length > 0 && (
+                    <div style={{
+                      background: C.surface, borderRadius: 12, padding: "10px 14px",
+                      border: `1px solid ${C.border}`, flex: 1,
+                    }}>
+                      <div style={{ fontFamily: FONT, fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6 }}>
+                        Works for
+                      </div>
+                      {result.suitable_occasions.map((occ) => (
+                        <div key={occ} style={{ fontFamily: FONT, fontSize: 13, color: C.text, lineHeight: 1.5 }}>
+                          {occ}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {result.top_archetypes?.length > 0 && (
+                    <div style={{
+                      background: C.surface, borderRadius: 12, padding: "10px 14px",
+                      border: `1px solid ${C.border}`, flex: 1,
+                    }}>
+                      <div style={{ fontFamily: FONT, fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6 }}>
+                        Style
+                      </div>
+                      {result.top_archetypes.map((arch) => (
+                        <div key={arch} style={{ fontFamily: FONT, fontSize: 13, color: C.text, lineHeight: 1.5 }}>
+                          {arch}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-
-                {result.best_occasion && (
-                  <div style={{
-                    background: C.surface, borderRadius: 12, padding: "10px 14px",
-                    border: `1px solid ${C.border}`, flex: 1,
-                  }}>
-                    <div style={{ fontFamily: FONT, fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em" }}>
-                      Best for
-                    </div>
-                    <div style={{ fontFamily: FONT, fontSize: 14, fontWeight: 600, color: C.text, lineHeight: 1.3, marginTop: 4 }}>
-                      {result.best_occasion}
-                    </div>
-                  </div>
-                )}
-              </div>
+              )}
 
               {/* Speech segments */}
               {result.speech_segments?.map((seg) => (
