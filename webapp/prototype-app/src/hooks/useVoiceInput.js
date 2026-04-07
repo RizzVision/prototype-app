@@ -46,8 +46,9 @@ export default function useVoiceInput({ onResult, continuous = true, lang = "en-
 
     recognition.onerror = (event) => {
       if (event.error === "no-speech" || event.error === "aborted") return;
+      // Permission denied — stop trying, mark unsupported
       if (event.error === "not-allowed" || event.error === "service-not-allowed") {
-        recognitionRef.current._shouldListen = false;
+        if (recognitionRef.current) recognitionRef.current._shouldListen = false;
         setIsListening(false);
         setSupported(false);
         return;
@@ -56,7 +57,7 @@ export default function useVoiceInput({ onResult, continuous = true, lang = "en-
     };
 
     recognition.onend = () => {
-      // If paused for TTS — do nothing; resumeListening() will call start() when ready
+      // Paused for TTS — do nothing; resumeListening() will restart when TTS ends
       if (recognitionRef.current?._paused) return;
       if (recognitionRef.current?._shouldListen) {
         try { recognition.start(); } catch { setIsListening(false); }
@@ -70,7 +71,7 @@ export default function useVoiceInput({ onResult, continuous = true, lang = "en-
     recognitionRef.current._paused = false;
 
     return () => {
-      recognitionRef.current._shouldListen = false;
+      if (recognitionRef.current) recognitionRef.current._shouldListen = false;
       try { recognition.stop(); } catch {}
     };
   }, [continuous, lang]);
@@ -78,6 +79,7 @@ export default function useVoiceInput({ onResult, continuous = true, lang = "en-
   const startListening = useCallback(() => {
     if (!recognitionRef.current) return;
     recognitionRef.current._shouldListen = true;
+    recognitionRef.current._paused = false;
     try {
       recognitionRef.current.start();
       setIsListening(true);
@@ -88,11 +90,27 @@ export default function useVoiceInput({ onResult, continuous = true, lang = "en-
   const stopListening = useCallback(() => {
     if (!recognitionRef.current) return;
     recognitionRef.current._shouldListen = false;
-    try {
-      recognitionRef.current.stop();
-    } catch {}
+    recognitionRef.current._paused = false;
+    try { recognitionRef.current.stop(); } catch {}
     setIsListening(false);
     playMicOff();
+  }, []);
+
+  // Pause recognition during TTS without changing user-visible isListening state.
+  // onend will see _paused=true and skip the auto-restart.
+  const pauseListening = useCallback(() => {
+    if (!recognitionRef.current) return;
+    recognitionRef.current._paused = true;
+    try { recognitionRef.current.stop(); } catch {}
+  }, []);
+
+  // Resume recognition after TTS ends, but only if the user still wants to listen.
+  const resumeListening = useCallback(() => {
+    if (!recognitionRef.current) return;
+    recognitionRef.current._paused = false;
+    if (recognitionRef.current._shouldListen) {
+      try { recognitionRef.current.start(); } catch {}
+    }
   }, []);
 
   const toggleListening = useCallback(() => {
@@ -107,6 +125,8 @@ export default function useVoiceInput({ onResult, continuous = true, lang = "en-
     supported,
     startListening,
     stopListening,
+    pauseListening,
+    resumeListening,
     toggleListening,
   };
 }

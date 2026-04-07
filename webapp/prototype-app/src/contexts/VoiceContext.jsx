@@ -11,7 +11,7 @@ const VoiceContext = createContext();
 
 export function VoiceProvider({ children, announce, onScreenCommand }) {
   const { navigate, goBack, descriptionMode, toggleDescriptionMode, setDescriptionMode } = useApp();
-  const { removeLast, items } = useWardrobe();
+  const { removeLast } = useWardrobe();
   const { speak, stop, repeat, isSpeaking } = useSpeechOutput();
 
   const handleVoiceResult = useCallback((transcript) => {
@@ -21,6 +21,7 @@ export function VoiceProvider({ children, announce, onScreenCommand }) {
 
     switch (command.type) {
       case "NAVIGATE":
+        // Destination screen announces itself — no TTS here to avoid overlap
         navigate(command.screen);
         break;
       case "GO_BACK":
@@ -65,7 +66,6 @@ export function VoiceProvider({ children, announce, onScreenCommand }) {
       case "READ_RESULT":
       case "SELECT_OCCASION":
       case "SELECT_MOOD":
-        // Forward screen-specific commands
         if (onScreenCommand) onScreenCommand(command);
         break;
       default:
@@ -73,8 +73,21 @@ export function VoiceProvider({ children, announce, onScreenCommand }) {
     }
   }, [navigate, goBack, speak, stop, repeat, removeLast, onScreenCommand, descriptionMode, toggleDescriptionMode, setDescriptionMode, announce]);
 
-  const { isListening, transcript, supported, startListening, stopListening, toggleListening } =
-    useVoiceInput({ onResult: handleVoiceResult });
+  const {
+    isListening, transcript, supported,
+    startListening, stopListening, pauseListening, resumeListening, toggleListening,
+  } = useVoiceInput({ onResult: handleVoiceResult });
+
+  // Mute mic while TTS speaks — prevents the app from hearing its own voice output.
+  // Resume 400ms after speech ends to let the audio card fully clear.
+  useEffect(() => {
+    if (isSpeaking) {
+      pauseListening();
+    } else {
+      const timer = setTimeout(resumeListening, 400);
+      return () => clearTimeout(timer);
+    }
+  }, [isSpeaking, pauseListening, resumeListening]);
 
   return (
     <VoiceContext.Provider value={{

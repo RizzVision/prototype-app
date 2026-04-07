@@ -18,11 +18,11 @@ export default function HomeScreen() {
     return () => clearTimeout(timer);
   }, [speak]);
 
-  // Only speak tips when mic transitions from off → on, not on initial mount
+  // Only speak tips when mic transitions from off → on (not on initial mount)
   const prevListeningRef = useRef(null);
   useEffect(() => {
     if (prevListeningRef.current === false && isListening) {
-      speak("Try: scan clothing, mirror, my wardrobe, outfit help, or shopping mode.");
+      speak("You can say things like: identify my outfit, what should I wear, my wardrobe, mirror, or shopping mode.");
     }
     prevListeningRef.current = isListening;
   }, [isListening, speak]);
