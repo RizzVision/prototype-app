@@ -2,7 +2,7 @@ import { useRef, useEffect, useState, useCallback } from "react";
 import { C, FONT } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
 
-export default function CameraView({ onCapture, onError, captureRef, onDescribe }) {
+export default function CameraView({ onCapture, onError, captureRef, onDescribe, autoCapture = false, captureInterval = 6000 }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const guidanceCanvasRef = useRef(null);
@@ -123,30 +123,6 @@ export default function CameraView({ onCapture, onError, captureRef, onDescribe 
     };
   }, []);
 
-  const describeWhatsFocused = useCallback(() => {
-    if (!ready || !videoRef.current || !guidanceCanvasRef.current) return;
-    const video = videoRef.current;
-    const gc = guidanceCanvasRef.current;
-    gc.width  = Math.floor(video.videoWidth  / 2);
-    gc.height = Math.floor(video.videoHeight / 2);
-    const ctx2 = gc.getContext("2d");
-    ctx2.drawImage(video, 0, 0, gc.width, gc.height);
-    const imageData = ctx2.getImageData(0, 0, gc.width, gc.height);
-    const box = estimateSubjectBox(imageData.data, gc.width, gc.height);
-
-    let description;
-    if (!box || box.confidence < 0.15) {
-      description = RESPONSES.whatsInFocus.noClothing;
-    } else {
-      const area = (box.x2 - box.x1) * (box.y2 - box.y1);
-      if (area < 0.06)      description = RESPONSES.whatsInFocus.tooSmall;
-      else if (area > 0.85) description = RESPONSES.whatsInFocus.tooLarge;
-      else                  description = RESPONSES.whatsInFocus.ready;
-    }
-    if (description === RESPONSES.whatsInFocus.ready) playReadyChime();
-    if (onDescribe) onDescribe(description);
-  }, [ready, estimateSubjectBox, onDescribe]);
-
   const playShutterSound = () => {
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -185,6 +161,30 @@ export default function CameraView({ onCapture, onError, captureRef, onDescribe 
     } catch (_) {}
   };
 
+  const describeWhatsFocused = useCallback(() => {
+    if (!ready || !videoRef.current || !guidanceCanvasRef.current) return;
+    const video = videoRef.current;
+    const gc = guidanceCanvasRef.current;
+    gc.width  = Math.floor(video.videoWidth  / 2);
+    gc.height = Math.floor(video.videoHeight / 2);
+    const ctx2 = gc.getContext("2d");
+    ctx2.drawImage(video, 0, 0, gc.width, gc.height);
+    const imageData = ctx2.getImageData(0, 0, gc.width, gc.height);
+    const box = estimateSubjectBox(imageData.data, gc.width, gc.height);
+
+    let description;
+    if (!box || box.confidence < 0.15) {
+      description = RESPONSES.whatsInFocus.noClothing;
+    } else {
+      const area = (box.x2 - box.x1) * (box.y2 - box.y1);
+      if (area < 0.06)      description = RESPONSES.whatsInFocus.tooSmall;
+      else if (area > 0.85) description = RESPONSES.whatsInFocus.tooLarge;
+      else                  description = RESPONSES.whatsInFocus.ready;
+    }
+    if (description === RESPONSES.whatsInFocus.ready) playReadyChime();
+    if (onDescribe) onDescribe(description);
+  }, [ready, estimateSubjectBox, onDescribe]);
+
   const handleCapture = useCallback(() => {
     playShutterSound();
     const dataUrl = captureFrame();
@@ -202,6 +202,12 @@ export default function CameraView({ onCapture, onError, captureRef, onDescribe 
   useEffect(() => {
     if (captureRef) captureRef.current = handleCapture;
   }, [captureRef, handleCapture]);
+
+  useEffect(() => {
+    if (!autoCapture || !ready) return;
+    const id = setInterval(() => handleCapture(), captureInterval);
+    return () => clearInterval(id);
+  }, [autoCapture, captureInterval, ready, handleCapture]);
 
   if (error) {
     return (
