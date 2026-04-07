@@ -18,6 +18,7 @@ import { useVoice } from "../contexts/VoiceContext";
 import { analyzeOutfit, ImageQualityError } from "../services/rizzVisionApi";
 import { C, FONT } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
+import { playSuccess, playError } from "../utils/sounds";
 
 function getDescriptionText(result, mode) {
   if (!result?.speech_segments?.length) return "";
@@ -67,6 +68,7 @@ export default function MirrorScreen() {
 
     try {
       const analysis = await analyzeOutfit(base64);
+      playSuccess();
       setResult(analysis);
       setPhase("result");
 
@@ -82,6 +84,7 @@ export default function MirrorScreen() {
       setErrorMsg(msg);
       announce(msg, "assertive");
       speak(msg);
+      playError();
       setPhase("error");
     }
   }, [speak, announce]);

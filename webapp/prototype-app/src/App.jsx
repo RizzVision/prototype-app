@@ -16,6 +16,7 @@ import ShoppingScreen from "./screens/ShoppingScreen";
 import MirrorScreen from "./screens/MirrorScreen";
 import EditItemScreen from "./screens/EditItemScreen";
 import { SCREENS, C, FONT } from "./utils/constants";
+import { playNav } from "./utils/sounds";
 
 const SCREEN_TITLES = {
   [SCREENS.HOME]:      "Home",
@@ -136,6 +137,7 @@ function AppShell() {
   useEffect(() => {
     const label = SCREEN_TITLES[screen] ?? "Rizzvision";
     document.title = `${label} — Rizzvision`;
+    playNav();
     announce(label, "assertive");
     // Small delay allows the new screen's DOM to render before focusing
     const id = setTimeout(() => {

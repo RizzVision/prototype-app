@@ -5,6 +5,7 @@ import { parseCommand } from "../voice/commandParser";
 import { useApp } from "./AppContext";
 import { useWardrobe } from "./WardrobeContext";
 import { RESPONSES } from "../voice/voiceResponses";
+import { playCommandRecognized } from "../utils/sounds";
 
 const VoiceContext = createContext();
 
@@ -16,6 +17,7 @@ export function VoiceProvider({ children, announce, onScreenCommand }) {
   const handleVoiceResult = useCallback((transcript) => {
     const command = parseCommand(transcript);
     if (!command) return;
+    playCommandRecognized();
 
     switch (command.type) {
       case "NAVIGATE":

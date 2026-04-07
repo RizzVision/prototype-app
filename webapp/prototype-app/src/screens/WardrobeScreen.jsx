@@ -7,6 +7,7 @@ import { useVoice } from "../contexts/VoiceContext";
 import { useApp } from "../contexts/AppContext";
 import { SCREENS, C, FONT, CATEGORIES } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
+import { playDeleted } from "../utils/sounds";
 
 export default function WardrobeScreen() {
   const { items, loading, removeItem, removeLast } = useWardrobe();
@@ -42,7 +43,7 @@ export default function WardrobeScreen() {
   const handleDelete = useCallback((id) => {
     const item = items.find(i => i.id === id);
     removeItem(id);
-    if (item) speak(RESPONSES.itemDeleted(item.name));
+    if (item) { playDeleted(); speak(RESPONSES.itemDeleted(item.name)); }
   }, [items, removeItem, speak]);
 
   const handleEdit = useCallback((item) => {

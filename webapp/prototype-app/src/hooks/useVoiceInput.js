@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import { playMicOn, playMicOff } from "../utils/sounds";
 
 const SpeechRecognition = typeof window !== "undefined"
   ? window.SpeechRecognition || window.webkitSpeechRecognition
@@ -72,6 +73,7 @@ export default function useVoiceInput({ onResult, continuous = true, lang = "en-
     try {
       recognitionRef.current.start();
       setIsListening(true);
+      playMicOn();
     } catch {}
   }, []);
 
@@ -82,6 +84,7 @@ export default function useVoiceInput({ onResult, continuous = true, lang = "en-
       recognitionRef.current.stop();
     } catch {}
     setIsListening(false);
+    playMicOff();
   }, []);
 
   const toggleListening = useCallback(() => {

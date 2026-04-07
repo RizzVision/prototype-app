@@ -20,6 +20,7 @@ import { useWardrobe } from "../contexts/WardrobeContext";
 import { analyzeForShopping, askShoppingFollowUp, ImageQualityError } from "../services/rizzVisionApi";
 import { C, FONT } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
+import { playSuccess, playError } from "../utils/sounds";
 
 export default function ShoppingScreen() {
   const { speak } = useVoice();
@@ -48,6 +49,7 @@ export default function ShoppingScreen() {
 
     try {
       const analysis = await analyzeForShopping(base64, wardrobeItems);
+      playSuccess();
       setResult(analysis);
 
       const segments = analysis.speech_segments ?? [];
@@ -58,6 +60,7 @@ export default function ShoppingScreen() {
       }
     } catch (err) {
       if (err instanceof ImageQualityError) {
+        playError();
         announce(err.userMessage, "assertive");
         speak(err.userMessage);
       }

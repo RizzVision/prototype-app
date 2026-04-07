@@ -22,6 +22,7 @@ import { useWardrobe } from "../contexts/WardrobeContext";
 import { analyzeOutfit, ImageQualityError } from "../services/rizzVisionApi";
 import { SCREENS, C, FONT } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
+import { playSuccess, playError, playSaved } from "../utils/sounds";
 
 
 function hexDistance(a, b) {
@@ -116,25 +117,6 @@ export default function ScanScreen() {
     speak(description);
   }, [speak, announce]);
 
-  const playSuccessSound = () => {
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const playNote = (freq, startTime) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.frequency.setValueAtTime(freq, startTime);
-        gain.gain.setValueAtTime(0.2, startTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.12);
-        osc.start(startTime);
-        osc.stop(startTime + 0.12);
-      };
-      playNote(880, ctx.currentTime);
-      playNote(660, ctx.currentTime + 0.1);
-    } catch (_) {}
-  };
-
   const handleCapture = useCallback(async (base64, dataUrl) => {
     setPhase("analyzing");
     setPreviewUrl(dataUrl);
@@ -156,7 +138,7 @@ export default function ScanScreen() {
         return;
       }
 
-      playSuccessSound();
+      playSuccess();
       setResult(analysis);
       setPhase("result");
 
@@ -172,6 +154,7 @@ export default function ScanScreen() {
       setErrorMsg(msg);
       announce(msg, "assertive");
       speak(msg);
+      playError();
       setPhase("error");
     }
   }, [speak, announce]);
@@ -220,6 +203,7 @@ export default function ScanScreen() {
       });
 
       const savedMsg = RESPONSES.saved(names[0]?.customName || g?.display_name || "item");
+      playSaved();
       speak(savedMsg);
       announce(savedMsg, "polite");
       setTimeout(() => navigate(SCREENS.WARDROBE), 1500);
