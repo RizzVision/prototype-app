@@ -94,6 +94,72 @@ export async function analyzeOutfit(base64) {
 }
 
 /**
+ * Shopping mode analysis — wardrobe-aware live feedback.
+ *
+ * @param {string} base64 Raw base64 image string.
+ * @param {Array}  wardrobeItems Array of wardrobe item objects (may be empty).
+ * @returns {Promise<ShoppingAnalysisResult>}
+ */
+export async function analyzeForShopping(base64, wardrobeItems = []) {
+  const blob = base64ToBlob(base64);
+  const formData = new FormData();
+  formData.append("image", blob, "outfit.jpg");
+
+  // Summarise wardrobe into a readable text block for the LLM
+  const wardrobeSummary = wardrobeItems.length
+    ? wardrobeItems
+        .map((item) => `- ${item.name || item.type}: ${item.color || ""} ${item.description || ""}`.trim())
+        .join("\n")
+    : "";
+  formData.append("wardrobe", wardrobeSummary);
+
+  let res;
+  try {
+    res = await fetch(`${BASE_URL}/shopping-analyze`, {
+      method: "POST",
+      body: formData,
+    });
+  } catch {
+    throw new Error("Could not reach the analysis server. Please check your connection and try again.");
+  }
+
+  if (res.ok) return await res.json();
+
+  let errorBody;
+  try { errorBody = await res.json(); } catch { throw new Error(`Server error (${res.status}).`); }
+
+  if (res.status === 422) {
+    throw new ImageQualityError(
+      errorBody.user_message || "There was an issue with the photo. Please try again.",
+      errorBody.error_code || "quality_error"
+    );
+  }
+  throw new Error(errorBody.user_message || errorBody.detail || `Analysis failed (${res.status}).`);
+}
+
+/**
+ * Ask a follow-up question about the last scanned shopping item.
+ *
+ * @param {string} question           The user's question.
+ * @param {string} lastAnalysisContext Context string returned by analyzeForShopping.
+ * @returns {Promise<{answer: string}>}
+ */
+export async function askShoppingFollowUp(question, lastAnalysisContext) {
+  let res;
+  try {
+    res = await fetch(`${BASE_URL}/shopping-followup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, last_analysis_context: lastAnalysisContext }),
+    });
+  } catch {
+    throw new Error("Could not reach the analysis server.");
+  }
+  if (res.ok) return await res.json();
+  throw new Error(`Follow-up failed (${res.status}).`);
+}
+
+/**
  * Quick health check — returns true if the backend is reachable.
  */
 export async function pingBackend() {

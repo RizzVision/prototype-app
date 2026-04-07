@@ -166,6 +166,191 @@ async def analyze_outfit(image: UploadFile = File(...)):
     return response
 
 
+class ShoppingAnalyzeRequest(BaseModel):
+    """Shopping mode — wardrobe-aware live analysis."""
+    wardrobe: str  # JSON string of wardrobe items (empty string if wardrobe is empty)
+
+
+class ShoppingFollowUpRequest(BaseModel):
+    """Follow-up question about the last scanned item."""
+    question: str
+    last_analysis_context: str  # Brief context from the previous analysis
+
+
+@router.post("/shopping-analyze")
+async def shopping_analyze(
+    image: UploadFile = File(...),
+    wardrobe: str = "",
+):
+    """
+    Shopping mode analysis: analyse the item in frame and compare it
+    against the user's wardrobe. Returns TTS-ready feedback.
+
+    If wardrobe is empty, gives a standalone style assessment.
+    Accepts: multipart/form-data with 'image' file and optional 'wardrobe' text field.
+    """
+    from google import genai
+    from google.genai import types as gtypes
+    from app.core.config import settings
+    import io as _io
+
+    start_time = time.time()
+
+    if not image or not image.filename:
+        raise ImageQualityError(
+            error_code="no_file_uploaded",
+            user_message=ERROR_MESSAGES["no_file_uploaded"],
+        )
+
+    raw_bytes = await image.read()
+    img = ingest_image(raw_bytes)
+    check_image_quality(img)
+
+    # Run standard pipeline to get color/style data
+    image_array = np.array(img)
+    regions, skin_mask = segmentation_model.segment(img)
+    garment_colors = extract_colors_for_garments(image_array, regions)
+    garment_labels = [gc["label"] for gc in garment_colors]
+    engine_result = run_color_engine(
+        image_array=image_array,
+        garment_colors=garment_colors,
+        garment_labels=garment_labels,
+        skin_mask=skin_mask,
+        pil_image=img,
+    )
+
+    # Build context summary for the shopping LLM prompt
+    garment_names = ", ".join(
+        f"{gd['display_name']} ({gd['color_name']})"
+        for gd in engine_result.garment_details
+    ) or "unidentified garment"
+
+    has_wardrobe = bool(wardrobe and wardrobe.strip() and wardrobe.strip() != "[]")
+
+    if has_wardrobe:
+        wardrobe_section = f"The user's wardrobe:\n{wardrobe}"
+        match_instruction = (
+            "Tell the user which specific items in their wardrobe this would pair well with, "
+            "and which items it would clash with. Be specific — name the items. "
+            "If nothing pairs well, say so honestly."
+        )
+    else:
+        wardrobe_section = "The user has no saved wardrobe items."
+        match_instruction = (
+            "The wardrobe is empty. Give a standalone style and fit assessment. "
+            "Tell the user how this item would look on them and what it would generally pair well with."
+        )
+
+    client = genai.Client(api_key=settings.GEMINI_API_KEY)
+
+    prompt = f"""You are RizzVision in shopping mode, speaking to a visually impaired user.
+Your response is read aloud. Every sentence must be under 15 words. No markdown. No lists.
+Use concrete, tactile language. Never say "looks good" — say WHY.
+
+Item detected: {garment_names}
+Color score: {engine_result.overall_score:.2f} ({engine_result.overall_label})
+Best occasion: {engine_result.occasion.best_occasion}
+Style: {engine_result.style.primary_archetype}
+
+{wardrobe_section}
+
+Task:
+1. Briefly describe what you see (1-2 sentences, garment and color).
+2. {match_instruction}
+3. One sentence on whether this is worth buying for their style.
+
+Return ONLY valid JSON:
+{{
+  "item_description": "string",
+  "wardrobe_match": "string",
+  "buy_verdict": "string"
+}}"""
+
+    img_bytes_io = _io.BytesIO()
+    img.save(img_bytes_io, format="JPEG", quality=85)
+    img_bytes = img_bytes_io.getvalue()
+
+    response = client.models.generate_content(
+        model=settings.GEMINI_MODEL,
+        contents=[
+            gtypes.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
+            prompt,
+        ],
+        config=gtypes.GenerateContentConfig(max_output_tokens=400, temperature=0.4),
+    )
+
+    import json as _json
+    try:
+        text = response.text.strip()
+        if text.startswith("```"):
+            text = "\n".join(l for l in text.split("\n") if not l.strip().startswith("```"))
+        data = _json.loads(text)
+    except Exception:
+        data = {
+            "item_description": "I can see a clothing item in frame.",
+            "wardrobe_match": "Unable to assess wardrobe compatibility right now.",
+            "buy_verdict": "Try again for a full assessment.",
+        }
+
+    speech_segments = []
+    if data.get("item_description"):
+        speech_segments.append({"id": "item", "text": data["item_description"]})
+    if data.get("wardrobe_match"):
+        speech_segments.append({"id": "match", "text": data["wardrobe_match"]})
+    if data.get("buy_verdict"):
+        speech_segments.append({"id": "verdict", "text": data["buy_verdict"]})
+
+    latency_ms = int((time.time() - start_time) * 1000)
+
+    # Store context for potential follow-up
+    analysis_context = (
+        f"Item: {garment_names}. "
+        f"Score: {engine_result.overall_score:.2f} ({engine_result.overall_label}). "
+        f"Occasion: {engine_result.occasion.best_occasion}. "
+        f"Assessment: {data.get('item_description', '')} {data.get('wardrobe_match', '')}"
+    )
+
+    return {
+        "speech_segments": speech_segments,
+        "color_score": engine_result.overall_score,
+        "color_label": engine_result.overall_label,
+        "best_occasion": engine_result.occasion.best_occasion,
+        "style_archetype": engine_result.style.primary_archetype,
+        "has_wardrobe": has_wardrobe,
+        "analysis_context": analysis_context,
+        "latency_ms": latency_ms,
+    }
+
+
+@router.post("/shopping-followup")
+async def shopping_followup(req: ShoppingFollowUpRequest):
+    """
+    Answer a follow-up question about the last scanned shopping item.
+    Returns a TTS-ready spoken answer.
+    """
+    from google import genai
+    from google.genai import types as gtypes
+    from app.core.config import settings
+
+    client = genai.Client(api_key=settings.GEMINI_API_KEY)
+
+    prompt = (
+        f"You are RizzVision, a fashion assistant for visually impaired users. "
+        f"Your response will be read aloud. Keep it under 3 sentences. No markdown. "
+        f"Context from the last scan: {req.last_analysis_context}\n\n"
+        f"User question: {req.question}\n\n"
+        f"Answer the question directly and concisely."
+    )
+
+    response = client.models.generate_content(
+        model=settings.GEMINI_MODEL,
+        contents=prompt,
+        config=gtypes.GenerateContentConfig(max_output_tokens=200, temperature=0.4),
+    )
+
+    return {"answer": response.text.strip()}
+
+
 class OutfitSuggestionRequest(BaseModel):
     occasion: str
     mood: str
