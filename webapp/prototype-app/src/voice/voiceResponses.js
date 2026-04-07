@@ -47,4 +47,6 @@ export const RESPONSES = {
   cameraError: "Could not access camera. Please allow camera permission.",
   goBack: "Going back.",
   notSupported: "Voice input is not supported in this browser. Please use Chrome.",
+  shortDescOn: "Switched to short descriptions.",
+  longDescOn: "Switched to long descriptions.",
 };

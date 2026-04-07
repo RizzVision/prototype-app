@@ -20,6 +20,15 @@ function reducer(state, action) {
     }
     case "SET_PARAMS":
       return { ...state, navParams: action.params };
+    case "TOGGLE_DESC_MODE": {
+      const next = state.descriptionMode === "short" ? "long" : "short";
+      localStorage.setItem("rizzv_desc_mode", next);
+      return { ...state, descriptionMode: next };
+    }
+    case "SET_DESC_MODE": {
+      localStorage.setItem("rizzv_desc_mode", action.mode);
+      return { ...state, descriptionMode: action.mode };
+    }
     default:
       return state;
   }
@@ -30,6 +39,7 @@ export function AppProvider({ children }) {
     screen: SCREENS.HOME,
     screenHistory: [],
     navParams: null,
+    descriptionMode: localStorage.getItem("rizzv_desc_mode") || "short",
   });
 
   const navigate = useCallback((screen, params) => {
@@ -40,10 +50,18 @@ export function AppProvider({ children }) {
     dispatch({ type: "GO_BACK" });
   }, []);
 
+  const toggleDescriptionMode = useCallback(() => {
+    dispatch({ type: "TOGGLE_DESC_MODE" });
+  }, []);
+
+  const setDescriptionMode = useCallback((mode) => {
+    dispatch({ type: "SET_DESC_MODE", mode });
+  }, []);
+
   const canGoBack = state.screenHistory.length > 0;
 
   return (
-    <AppContext.Provider value={{ ...state, navigate, goBack, canGoBack }}>
+    <AppContext.Provider value={{ ...state, navigate, goBack, canGoBack, toggleDescriptionMode, setDescriptionMode }}>
       {children}
     </AppContext.Provider>
   );

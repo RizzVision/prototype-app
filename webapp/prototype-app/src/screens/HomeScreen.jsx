@@ -9,7 +9,7 @@ import { SCREENS } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
 
 export default function HomeScreen() {
-  const { navigate } = useApp();
+  const { navigate, descriptionMode, toggleDescriptionMode } = useApp();
   const { signOut } = useAuth();
   const { speak, isListening, toggleListening } = useVoice();
 
@@ -86,7 +86,22 @@ export default function HomeScreen() {
           </div>
         </div>
 
-        <div style={{ marginTop: 24 }}>
+        <BigButton
+          label={descriptionMode === "short" ? "Description: Short" : "Description: Long"}
+          hint={descriptionMode === "short"
+            ? "Short summaries are on. Tap to switch to full descriptions."
+            : "Full descriptions are on. Tap to switch to short summaries."}
+          icon="📝"
+          onClick={() => {
+            toggleDescriptionMode();
+            const msg = descriptionMode === "short"
+              ? "Switched to long descriptions."
+              : "Switched to short descriptions.";
+            speak(msg);
+          }}
+        />
+
+        <div style={{ marginTop: 8 }}>
           <BigButton
             label="Sign Out"
             hint="Sign out of your account"

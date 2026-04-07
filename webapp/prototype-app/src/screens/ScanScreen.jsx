@@ -55,8 +55,22 @@ function inferCategory(label) {
   return "tops";
 }
 
+function getDescriptionText(result, mode) {
+  if (!result?.speech_segments?.length) return "";
+  if (mode === "long") {
+    return result.speech_segments.map((s) => s.text).join("  ");
+  }
+  const score = Math.round((result.color_score ?? 0) * 100);
+  const label = result.color_label || "";
+  const occasion = result.best_occasion || "";
+  const archetype = result.style_archetype || "";
+  const line2Parts = [`Color harmony: ${score}% — ${label}.`];
+  if (occasion || archetype) line2Parts.push(`Best for ${occasion}${archetype ? `, ${archetype} style` : ""}.`);
+  return `${result.speech_segments[0].text}  ${line2Parts.join(" ")}`;
+}
+
 export default function ScanScreen() {
-  const { navigate } = useApp();
+  const { navigate, descriptionMode, toggleDescriptionMode } = useApp();
   const { speak } = useVoice();
   const { addItem, items: wardrobeItems } = useWardrobe();
   const { announce, LiveRegions } = useAnnounce();
@@ -147,9 +161,9 @@ export default function ScanScreen() {
       setPhase("result");
 
       if (analysis.speech_segments?.length) {
-        const fullText = analysis.speech_segments.map((s) => s.text).join("  ");
-        announce(fullText, "polite");
-        speak(fullText);
+        const descText = getDescriptionText(analysis, descriptionMode);
+        announce(descText, "polite");
+        speak(descText);
       }
     } catch (err) {
       const msg =
@@ -257,9 +271,9 @@ export default function ScanScreen() {
 
   const speakResult = useCallback(() => {
     if (result?.speech_segments?.length) {
-      speak(result.speech_segments.map((s) => s.text).join("  "));
+      speak(getDescriptionText(result, descriptionMode));
     }
-  }, [result, speak]);
+  }, [result, speak, descriptionMode]);
 
   // Voice command listener — placed after all callbacks to avoid TDZ in prod build
   useEffect(() => {
@@ -615,24 +629,30 @@ export default function ScanScreen() {
         </div>
       )}
 
-      {/* Scrollable speech-segment transcript */}
+      {/* Speech-segment transcript */}
       {result?.speech_segments?.length > 0 && (
         <div
-          aria-label="Full outfit analysis transcript"
+          aria-label={descriptionMode === "short" ? "Short outfit analysis summary" : "Full outfit analysis transcript"}
           style={{
             background: C.surface, borderRadius: 14, padding: 18,
             border: `1px solid ${C.border}`, marginBottom: 20,
             maxHeight: 220, overflowY: "auto",
           }}
         >
-          {result.speech_segments.map((seg) => (
-            <p key={seg.id} style={{
-              fontFamily: FONT, fontSize: 15, color: C.text, lineHeight: 1.8,
-              margin: "0 0 10px 0",
-            }}>
-              {seg.text}
+          {descriptionMode === "short" ? (
+            <p style={{ fontFamily: FONT, fontSize: 15, color: C.text, lineHeight: 1.8, margin: 0 }}>
+              {getDescriptionText(result, "short")}
             </p>
-          ))}
+          ) : (
+            result.speech_segments.map((seg) => (
+              <p key={seg.id} style={{
+                fontFamily: FONT, fontSize: 15, color: C.text, lineHeight: 1.8,
+                margin: "0 0 10px 0",
+              }}>
+                {seg.text}
+              </p>
+            ))
+          )}
         </div>
       )}
 
@@ -642,6 +662,22 @@ export default function ScanScreen() {
           hint="Hear the complete outfit analysis read aloud"
           icon="🔊"
           onClick={speakResult}
+        />
+        <BigButton
+          label={descriptionMode === "short" ? "Switch to Long Description" : "Switch to Short Description"}
+          hint={descriptionMode === "short"
+            ? "Short summaries are on. Tap to switch to full descriptions."
+            : "Full descriptions are on. Tap to switch to short summaries."}
+          icon="📝"
+          onClick={() => {
+            toggleDescriptionMode();
+            const msg = descriptionMode === "short"
+              ? "Switched to long descriptions."
+              : "Switched to short descriptions.";
+            speak(msg);
+            announce(msg, "polite");
+            setTimeout(() => speak(getDescriptionText(result, descriptionMode === "short" ? "long" : "short")), 1200);
+          }}
         />
         <BigButton
           label="Save to Wardrobe"

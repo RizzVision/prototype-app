@@ -9,7 +9,7 @@ import { RESPONSES } from "../voice/voiceResponses";
 const VoiceContext = createContext();
 
 export function VoiceProvider({ children, announce, onScreenCommand }) {
-  const { navigate, goBack } = useApp();
+  const { navigate, goBack, descriptionMode, toggleDescriptionMode, setDescriptionMode } = useApp();
   const { removeLast, items } = useWardrobe();
   const { speak, stop, repeat, isSpeaking } = useSpeechOutput();
 
@@ -38,6 +38,21 @@ export function VoiceProvider({ children, announce, onScreenCommand }) {
         else speak(RESPONSES.noItemToDelete);
         break;
       }
+      case "SET_DESC_MODE": {
+        setDescriptionMode(command.mode);
+        const msg = command.mode === "short" ? RESPONSES.shortDescOn : RESPONSES.longDescOn;
+        speak(msg);
+        if (announce) announce(msg, "polite");
+        break;
+      }
+      case "TOGGLE_DESC_MODE": {
+        toggleDescriptionMode();
+        const nextMode = descriptionMode === "short" ? "long" : "short";
+        const msg = nextMode === "short" ? RESPONSES.shortDescOn : RESPONSES.longDescOn;
+        speak(msg);
+        if (announce) announce(msg, "polite");
+        break;
+      }
       case "READ_WARDROBE":
       case "FILTER_WARDROBE":
       case "SAVE_ITEM":
@@ -56,7 +71,7 @@ export function VoiceProvider({ children, announce, onScreenCommand }) {
       default:
         break;
     }
-  }, [navigate, goBack, speak, stop, repeat, removeLast, onScreenCommand]);
+  }, [navigate, goBack, speak, stop, repeat, removeLast, onScreenCommand, descriptionMode, toggleDescriptionMode, setDescriptionMode, announce]);
 
   const { isListening, transcript, supported, startListening, stopListening, toggleListening } =
     useVoiceInput({ onResult: handleVoiceResult });

@@ -13,13 +13,34 @@ import Screen from "../components/Screen";
 import BigButton from "../components/BigButton";
 import CameraView from "../components/CameraView";
 import { useAnnounce } from "../components/LiveRegions";
+import { useApp } from "../contexts/AppContext";
 import { useVoice } from "../contexts/VoiceContext";
 import { analyzeOutfit, ImageQualityError } from "../services/rizzVisionApi";
 import { C, FONT } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
 
+function getDescriptionText(result, mode) {
+  if (!result?.speech_segments?.length) return "";
+  if (mode === "long") {
+    return result.speech_segments.map((s) => s.text).join("  ");
+  }
+  const score = Math.round((result.color_score ?? 0) * 100);
+  const label = result.color_label || "";
+  const occasion = result.best_occasion || "";
+  const archetype = result.style_archetype || "";
+  const line2Parts = [`Color harmony: ${score}% — ${label}.`];
+  if (occasion || archetype) line2Parts.push(`Best for ${occasion}${archetype ? `, ${archetype} style` : ""}.`);
+  return `${result.speech_segments[0].text}  ${line2Parts.join(" ")}`;
+}
+
+function scoreColor(score) {
+  if (score >= 0.65) return C.success;
+  if (score >= 0.45) return C.focus;
+  return C.danger;
+}
 
 export default function MirrorScreen() {
+  const { descriptionMode, toggleDescriptionMode } = useApp();
   const { speak } = useVoice();
   const { announce, LiveRegions } = useAnnounce();
 
@@ -50,9 +71,9 @@ export default function MirrorScreen() {
       setPhase("result");
 
       if (analysis.speech_segments?.length) {
-        const fullText = analysis.speech_segments.map((s) => s.text).join("  ");
-        announce(fullText, "polite");
-        speak(fullText);
+        const descText = getDescriptionText(analysis, descriptionMode);
+        announce(descText, "polite");
+        speak(descText);
       }
     } catch (err) {
       const msg =
@@ -76,9 +97,9 @@ export default function MirrorScreen() {
 
   const speakResult = useCallback(() => {
     if (result?.speech_segments?.length) {
-      speak(result.speech_segments.map((s) => s.text).join("  "));
+      speak(getDescriptionText(result, descriptionMode));
     }
-  }, [result, speak]);
+  }, [result, speak, descriptionMode]);
 
   // Voice command listener — placed after all callbacks to avoid TDZ in prod build
   useEffect(() => {
@@ -256,33 +277,55 @@ export default function MirrorScreen() {
         </div>
       )}
 
-      {/* Full analysis transcript */}
+      {/* Analysis transcript */}
       {result?.speech_segments?.length > 0 && (
         <div
-          aria-label="Full outfit analysis"
+          aria-label={descriptionMode === "short" ? "Short outfit analysis summary" : "Full outfit analysis"}
           style={{
             background: C.surface, borderRadius: 14, padding: 18,
             border: `1px solid ${C.border}`, marginBottom: 20,
             maxHeight: 240, overflowY: "auto",
           }}
         >
-          {result.speech_segments.map((seg) => (
-            <p key={seg.id} style={{
-              fontFamily: FONT, fontSize: 15, color: C.text, lineHeight: 1.8,
-              margin: "0 0 10px 0",
-            }}>
-              {seg.text}
+          {descriptionMode === "short" ? (
+            <p style={{ fontFamily: FONT, fontSize: 15, color: C.text, lineHeight: 1.8, margin: 0 }}>
+              {getDescriptionText(result, "short")}
             </p>
-          ))}
+          ) : (
+            result.speech_segments.map((seg) => (
+              <p key={seg.id} style={{
+                fontFamily: FONT, fontSize: 15, color: C.text, lineHeight: 1.8,
+                margin: "0 0 10px 0",
+              }}>
+                {seg.text}
+              </p>
+            ))
+          )}
         </div>
       )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <BigButton
           label="Read Again"
-          hint="Hear the full assessment read aloud again"
+          hint="Hear the assessment read aloud again"
           icon="🔊"
           onClick={speakResult}
+        />
+        <BigButton
+          label={descriptionMode === "short" ? "Switch to Long Description" : "Switch to Short Description"}
+          hint={descriptionMode === "short"
+            ? "Short summaries are on. Tap to switch to full descriptions."
+            : "Full descriptions are on. Tap to switch to short summaries."}
+          icon="📝"
+          onClick={() => {
+            toggleDescriptionMode();
+            const msg = descriptionMode === "short"
+              ? "Switched to long descriptions."
+              : "Switched to short descriptions.";
+            speak(msg);
+            announce(msg, "polite");
+            setTimeout(() => speak(getDescriptionText(result, descriptionMode === "short" ? "long" : "short")), 1200);
+          }}
         />
         <BigButton
           label="Try Again"

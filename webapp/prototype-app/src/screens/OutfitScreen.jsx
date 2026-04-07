@@ -9,8 +9,14 @@ import { getOutfitSuggestion } from "../services/outfitRecommendation";
 import { OCCASIONS, SCREENS, C, FONT } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
 
+function getShortSuggestion(text) {
+  if (!text) return "";
+  const sentences = text.split(". ");
+  return sentences.length > 1 ? sentences[0] + ". " + sentences[1] + "." : sentences[0];
+}
+
 export default function OutfitScreen() {
-  const { navParams, navigate } = useApp();
+  const { navParams, navigate, descriptionMode, toggleDescriptionMode } = useApp();
   const { speak } = useVoice();
   const { items } = useWardrobe();
   const [phase, setPhase] = useState("occasion"); // occasion | loading | result
@@ -51,7 +57,7 @@ export default function OutfitScreen() {
       });
       setResult(response);
       setPhase("result");
-      speak(response);
+      speak(descriptionMode === "short" ? getShortSuggestion(response) : response);
     } catch {
       speak(RESPONSES.error);
       setPhase("occasion");
@@ -67,7 +73,7 @@ export default function OutfitScreen() {
       } else if (cmd.type === "CONFIRM") {
         if (phase === "occasion" && occasion) generateOutfit();
       } else if (cmd.type === "READ_RESULT" && phase === "result") {
-        speak(result);
+        speak(descriptionMode === "short" ? getShortSuggestion(result) : result);
       }
     };
     window.addEventListener("voiceCommand", handler);
@@ -134,32 +140,45 @@ export default function OutfitScreen() {
   }
 
   // Result phase
-  const occasionLabel = OCCASIONS.find(o => o.id === occasion)?.label || occasion;
+  const displayedResult = descriptionMode === "short" ? getShortSuggestion(result) : result;
+
   return (
-    <Screen title="Your Outfit" subtitle={`For ${occasionLabel}`}>
-      <div
-        role="region"
-        aria-label="Outfit suggestion"
-        style={{
-          background: C.surface, borderRadius: 16, padding: 20,
-          border: `1px solid ${C.border}`, marginBottom: 20,
-        }}
-      >
-        <p style={{
-          fontFamily: FONT, fontSize: 18, color: C.text, lineHeight: 1.8, margin: 0,
-        }}>{result}</p>
+    <Screen title="Your Outfits" subtitle={`For ${OCCASIONS.find(o => o.id === occasion)?.label || occasion}`}>
+      <div style={{
+        background: C.surface, borderRadius: 16, padding: 20,
+        border: `1px solid ${C.border}`, marginBottom: 20,
+      }}>
+        <pre style={{
+          fontFamily: FONT, fontSize: 17, color: C.text, lineHeight: 1.8,
+          whiteSpace: "pre-wrap", margin: 0,
+        }}>{displayedResult}</pre>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <BigButton
           label="Read Again"
-          hint="Hear the outfit suggestion again"
+          hint="Hear the suggestions again"
           icon="🔊"
-          onClick={() => speak(result)}
+          onClick={() => speak(displayedResult)}
         />
         <BigButton
-          label="Try a Different Occasion"
-          hint="Choose a new occasion for a fresh suggestion"
+          label={descriptionMode === "short" ? "Switch to Long Description" : "Switch to Short Description"}
+          hint={descriptionMode === "short"
+            ? "Short summaries are on. Tap to switch to full descriptions."
+            : "Full descriptions are on. Tap to switch to short summaries."}
+          icon="📝"
+          onClick={() => {
+            toggleDescriptionMode();
+            const msg = descriptionMode === "short"
+              ? "Switched to long descriptions."
+              : "Switched to short descriptions.";
+            speak(msg);
+            setTimeout(() => speak(descriptionMode === "short" ? result : getShortSuggestion(result)), 1200);
+          }}
+        />
+        <BigButton
+          label="Try Different Options"
+          hint="Choose a new occasion"
           icon="🔄"
           onClick={() => { setPhase("occasion"); setOccasion(null); setResult(""); }}
         />

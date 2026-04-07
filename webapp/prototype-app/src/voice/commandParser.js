@@ -57,8 +57,20 @@ const COMMANDS = [
   { patterns: ["electric", "vibrant"],          action: { type: "SELECT_MOOD", id: "electric" } },
 ];
 
+const DESC_MODE_PATTERNS = [
+  { regex: /(short|brief|quick)\s*(description|descriptions|mode)/i, action: { type: "SET_DESC_MODE", mode: "short" } },
+  { regex: /(long|full|detail(ed)?)\s*(description|descriptions|mode)/i, action: { type: "SET_DESC_MODE", mode: "long" } },
+  { regex: /(toggle|switch)\s*(description|descriptions|mode)/i, action: { type: "TOGGLE_DESC_MODE" } },
+];
+
 export function parseCommand(transcript) {
   const text = transcript.toLowerCase().trim();
+
+  // Check description mode regex patterns first
+  for (const { regex, action } of DESC_MODE_PATTERNS) {
+    if (regex.test(transcript)) return action;
+  }
+
   for (const cmd of COMMANDS) {
     for (const pattern of cmd.patterns) {
       if (text.includes(pattern)) {
