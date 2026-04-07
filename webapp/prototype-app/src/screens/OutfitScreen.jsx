@@ -26,15 +26,18 @@ export default function OutfitScreen() {
   const anchorItem = navParams?.anchorItem || null;
 
   useEffect(() => {
-    if (items.length === 0) {
-      speak("Your wardrobe is empty. Add some items first by scanning clothing.");
-      return;
-    }
-    if (anchorItem) {
-      speak(`Building an outfit around your ${anchorItem.name}. What occasion are you dressing for?`);
-    } else {
-      speak(RESPONSES.outfitPrompt);
-    }
+    const timer = setTimeout(() => {
+      if (items.length === 0) {
+        speak("Your wardrobe is empty. Add some items first by scanning clothing.");
+        return;
+      }
+      if (anchorItem) {
+        speak(`Building an outfit around your ${anchorItem.name}. What occasion are you dressing for?`);
+      } else {
+        speak(RESPONSES.outfitPrompt);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

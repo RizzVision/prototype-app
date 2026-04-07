@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import Screen from "../components/Screen";
 import BigButton from "../components/BigButton";
 import MicButton from "../components/MicButton";
@@ -14,12 +14,17 @@ export default function HomeScreen() {
   const { speak, isListening, toggleListening } = useVoice();
 
   useEffect(() => {
-    const timer = setTimeout(() => speak(RESPONSES.welcome), 500);
+    const timer = setTimeout(() => speak(RESPONSES.welcome), 400);
     return () => clearTimeout(timer);
   }, [speak]);
 
+  // Only speak tips when mic transitions from off → on, not on initial mount
+  const prevListeningRef = useRef(null);
   useEffect(() => {
-    if (isListening) speak("Try: scan clothing to save items, mirror to check today's outfit, my wardrobe, outfit help, or shopping mode.");
+    if (prevListeningRef.current === false && isListening) {
+      speak("Try: scan clothing, mirror, my wardrobe, outfit help, or shopping mode.");
+    }
+    prevListeningRef.current = isListening;
   }, [isListening, speak]);
 
   return (

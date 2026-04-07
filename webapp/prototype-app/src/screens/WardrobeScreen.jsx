@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Screen from "../components/Screen";
 import BigButton from "../components/BigButton";
 import WardrobeCard from "../components/WardrobeCard";
@@ -14,16 +14,19 @@ export default function WardrobeScreen() {
   const { speak } = useVoice();
   const { navigate } = useApp();
   const [filter, setFilter] = useState(null);
+  const hasSpokeRef = useRef(false);
 
   const filtered = filter ? items.filter(i => i.category === filter) : items;
 
+  // Speak count once after initial load — do not re-speak on Supabase real-time updates
   useEffect(() => {
-    if (items.length === 0) {
-      speak(RESPONSES.wardrobeEmpty);
-    } else {
-      speak(RESPONSES.wardrobeCount(items.length));
-    }
-  }, [items, speak]);
+    if (loading || hasSpokeRef.current) return;
+    hasSpokeRef.current = true;
+    const timer = setTimeout(() => {
+      speak(items.length === 0 ? RESPONSES.wardrobeEmpty : RESPONSES.wardrobeCount(items.length));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [items, loading, speak]);
 
   const readAll = useCallback(() => {
     if (filtered.length === 0) {

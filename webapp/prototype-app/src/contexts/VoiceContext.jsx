@@ -21,11 +21,9 @@ export function VoiceProvider({ children, announce, onScreenCommand }) {
 
     switch (command.type) {
       case "NAVIGATE":
-        speak(RESPONSES.goBack);
         navigate(command.screen);
         break;
       case "GO_BACK":
-        speak(RESPONSES.goBack);
         goBack();
         break;
       case "REPEAT":

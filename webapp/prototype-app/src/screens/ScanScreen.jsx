@@ -91,10 +91,12 @@ export default function ScanScreen() {
   const nameInputRef = useRef(null);
 
   useEffect(() => {
-    if (phase === "camera") {
+    if (phase !== "camera") return;
+    const timer = setTimeout(() => {
       speak(RESPONSES.scanReady);
       announce("Camera ready. Point at your outfit, tap Describe to check framing, then tap Capture.", "polite");
-    }
+    }, 300);
+    return () => clearTimeout(timer);
   }, [phase, speak, announce]);
 
   // Move focus to result heading so screen readers announce it immediately

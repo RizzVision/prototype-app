@@ -36,9 +36,11 @@ export default function ShoppingScreen() {
   const inputRef = useRef(null);
 
   useEffect(() => {
-    const msg = RESPONSES.shoppingStart;
-    speak(msg);
-    announce(msg, "polite");
+    const timer = setTimeout(() => {
+      speak(RESPONSES.shoppingStart);
+      announce(RESPONSES.shoppingStart, "polite");
+    }, 300);
+    return () => clearTimeout(timer);
   }, [speak, announce]);
 
   const handleCapture = useCallback(async (base64) => {

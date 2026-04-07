@@ -52,8 +52,11 @@ export default function MirrorScreen() {
   const resultRef = useRef(null);
 
   useEffect(() => {
-    speak(RESPONSES.mirrorReady);
-    announce(RESPONSES.mirrorReady, "polite");
+    const timer = setTimeout(() => {
+      speak(RESPONSES.mirrorReady);
+      announce(RESPONSES.mirrorReady, "polite");
+    }, 300);
+    return () => clearTimeout(timer);
   }, [speak, announce]);
 
   useEffect(() => {
