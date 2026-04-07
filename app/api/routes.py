@@ -325,7 +325,6 @@ async def shopping_followup(req: ShoppingFollowUpRequest):
 
 class OutfitSuggestionRequest(BaseModel):
     occasion: str
-    mood: str
     wardrobe: str
     anchor: str = ""
 
@@ -333,8 +332,9 @@ class OutfitSuggestionRequest(BaseModel):
 @router.post("/outfit-suggestion")
 async def outfit_suggestion(req: OutfitSuggestionRequest):
     """
-    Generate outfit combinations from wardrobe items for a given occasion and mood.
-    Uses Gemini to produce TTS-ready spoken suggestions.
+    Generate 1-2 outfit combinations from wardrobe items for a given occasion.
+    Uses Gemini to produce short, fun, TTS-ready spoken suggestions that name
+    exact wardrobe items by their saved names.
     """
     from google import genai
     from google.genai import types
@@ -342,23 +342,31 @@ async def outfit_suggestion(req: OutfitSuggestionRequest):
 
     client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
-    anchor_line = f"\n{req.anchor}" if req.anchor else ""
+    anchor_line = f"\nBuild the outfit around: {req.anchor}" if req.anchor else ""
+
     prompt = (
-        f"You are a confident fashion stylist speaking to a visually impaired user. "
-        f"Your response will be read aloud. Keep every sentence under 15 words. "
-        f"Use vivid sensory language for colours (warmth, texture, mood) — never just name the colour.\n\n"
-        f"Occasion: {req.occasion}\nMood: {req.mood}{anchor_line}\n\n"
-        f"Their wardrobe:\n{req.wardrobe}\n\n"
-        f"Give 2 outfit combinations. Format:\n"
-        f"Outfit one: [name]\nWhat to wear: [pieces]\nHow it feels: [colour/texture description]\nWhy it works: [1-2 sentences]\n\n"
-        f"Outfit two: [name]\nWhat to wear: [pieces]\nHow it feels: [colour/texture description]\nWhy it works: [1-2 sentences]\n\n"
-        f"One thing to avoid: [clear warning]\n\n"
-        f"If wardrobe is empty or too sparse, say so and suggest what to add."
+        f"You are RizzVision, a bold and fun fashion assistant speaking to a visually impaired user. "
+        f"Your response will be read aloud by a screen reader.\n\n"
+        f"RULES:\n"
+        f"1. ALWAYS refer to items by their EXACT name from the wardrobe list below. Never paraphrase or genericise. "
+        f"   If the item is called 'white polo', say 'white polo'. If it's 'camo cargo pants', say 'camo cargo pants'.\n"
+        f"2. Never use hex codes. Never use technical colour codes. Use the colour name as given in the item name.\n"
+        f"3. Be short and punchy. The whole response must be under 80 words.\n"
+        f"4. Be fun and confident — like a friend hyping them up. Use phrases like "
+        f"   'You would absolutely slay in...', 'This combo is a vibe:', 'Trust me on this one:', "
+        f"   'Nobody is ready for you in...', etc.\n"
+        f"5. Give exactly 1 outfit combination if the wardrobe is small (under 4 items), "
+        f"   or 2 combinations if there are 4 or more items.\n"
+        f"6. Each combination is ONE sentence naming the exact items.\n"
+        f"7. End with one short sentence on why it works for the occasion.\n"
+        f"8. If the wardrobe is empty, say 'Your wardrobe is empty. Scan some clothes first and come back.'\n\n"
+        f"Occasion: {req.occasion}{anchor_line}\n\n"
+        f"Wardrobe (use these exact names):\n{req.wardrobe}"
     )
 
     response = client.models.generate_content(
         model=settings.GEMINI_MODEL,
         contents=prompt,
-        config=types.GenerateContentConfig(max_output_tokens=600, temperature=0.4),
+        config=types.GenerateContentConfig(max_output_tokens=250, temperature=0.7),
     )
     return {"suggestion": response.text}

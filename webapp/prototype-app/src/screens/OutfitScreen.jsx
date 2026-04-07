@@ -6,16 +6,15 @@ import { useApp } from "../contexts/AppContext";
 import { useVoice } from "../contexts/VoiceContext";
 import { useWardrobe } from "../contexts/WardrobeContext";
 import { getOutfitSuggestion } from "../services/outfitRecommendation";
-import { OCCASIONS, MOODS, SCREENS, C, FONT } from "../utils/constants";
+import { OCCASIONS, SCREENS, C, FONT } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
 
 export default function OutfitScreen() {
   const { navParams, navigate } = useApp();
   const { speak } = useVoice();
   const { items } = useWardrobe();
-  const [phase, setPhase] = useState("occasion"); // occasion | mood | loading | result
+  const [phase, setPhase] = useState("occasion"); // occasion | loading | result
   const [occasion, setOccasion] = useState(null);
-  const [mood, setMood] = useState(null);
   const [result, setResult] = useState("");
 
   const anchorItem = navParams?.anchorItem || null;
@@ -37,30 +36,17 @@ export default function OutfitScreen() {
     setOccasion(id);
   }, []);
 
-  const handleMoodSelect = useCallback((id) => {
-    setMood(id);
-  }, []);
-
-  const proceedToMood = useCallback(() => {
-    if (!occasion) return;
-    const label = OCCASIONS.find(o => o.id === occasion)?.label || occasion;
-    speak(RESPONSES.moodPrompt(label));
-    setPhase("mood");
-  }, [occasion, speak]);
-
   const generateOutfit = useCallback(async () => {
-    if (!mood) return;
+    if (!occasion) return;
     setPhase("loading");
     speak(RESPONSES.generating);
 
     const occasionLabel = OCCASIONS.find(o => o.id === occasion)?.label || occasion;
-    const moodLabel = MOODS.find(m => m.id === mood)?.label || mood;
 
     try {
       const response = await getOutfitSuggestion({
         items,
         occasion: occasionLabel,
-        mood: moodLabel,
         anchorItem,
       });
       setResult(response);
@@ -70,7 +56,7 @@ export default function OutfitScreen() {
       speak(RESPONSES.error);
       setPhase("occasion");
     }
-  }, [mood, occasion, items, anchorItem, speak]);
+  }, [occasion, items, anchorItem, speak]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -78,19 +64,15 @@ export default function OutfitScreen() {
       if (cmd.type === "SELECT_OCCASION" && phase === "occasion") {
         handleOccasionSelect(cmd.id);
         speak(OCCASIONS.find(o => o.id === cmd.id)?.label ?? cmd.id);
-      } else if (cmd.type === "SELECT_MOOD" && phase === "mood") {
-        handleMoodSelect(cmd.id);
-        speak(MOODS.find(m => m.id === cmd.id)?.label ?? cmd.id);
       } else if (cmd.type === "CONFIRM") {
-        if (phase === "occasion" && occasion) proceedToMood();
-        else if (phase === "mood" && mood) generateOutfit();
+        if (phase === "occasion" && occasion) generateOutfit();
       } else if (cmd.type === "READ_RESULT" && phase === "result") {
         speak(result);
       }
     };
     window.addEventListener("voiceCommand", handler);
     return () => window.removeEventListener("voiceCommand", handler);
-  }, [phase, occasion, mood, result, handleOccasionSelect, handleMoodSelect, proceedToMood, generateOutfit, speak]);
+  }, [phase, occasion, result, handleOccasionSelect, generateOutfit, speak]);
 
   if (items.length === 0) {
     return (
@@ -114,40 +96,20 @@ export default function OutfitScreen() {
     return (
       <Screen
         title="Outfit Help"
-        subtitle={anchorItem ? `Building around: ${anchorItem.name}` : "What occasion are you dressing for?"}
+        subtitle={anchorItem ? `Building around: ${anchorItem.name}` : "What's the occasion?"}
       >
         <ChoiceList
-          heading="Occasion"
+          heading="Pick your occasion"
           items={OCCASIONS}
           selected={occasion}
           onSelect={handleOccasionSelect}
         />
         <div style={{ marginTop: 16 }}>
           <BigButton
-            label="Next"
+            label="Get My Outfit"
+            hint="Generate outfit suggestions for the selected occasion"
             variant="primary"
             disabled={!occasion}
-            onClick={proceedToMood}
-          />
-        </div>
-      </Screen>
-    );
-  }
-
-  if (phase === "mood") {
-    return (
-      <Screen title="Outfit Help" subtitle="What vibe are you going for?">
-        <ChoiceList
-          heading="Mood"
-          items={MOODS}
-          selected={mood}
-          onSelect={handleMoodSelect}
-        />
-        <div style={{ marginTop: 16 }}>
-          <BigButton
-            label="Get Suggestions"
-            variant="primary"
-            disabled={!mood}
             onClick={generateOutfit}
           />
         </div>
@@ -157,7 +119,7 @@ export default function OutfitScreen() {
 
   if (phase === "loading") {
     return (
-      <Screen title="Thinking..." subtitle="Putting together some looks for you.">
+      <Screen title="Styling you up..." subtitle="Give me a second.">
         <div style={{ display: "flex", justifyContent: "center", padding: 60 }}>
           <div style={{
             width: 48, height: 48, borderRadius: "50%",
@@ -172,30 +134,34 @@ export default function OutfitScreen() {
   }
 
   // Result phase
+  const occasionLabel = OCCASIONS.find(o => o.id === occasion)?.label || occasion;
   return (
-    <Screen title="Your Outfits" subtitle={`For ${OCCASIONS.find(o => o.id === occasion)?.label || occasion}`}>
-      <div style={{
-        background: C.surface, borderRadius: 16, padding: 20,
-        border: `1px solid ${C.border}`, marginBottom: 20,
-      }}>
-        <pre style={{
-          fontFamily: FONT, fontSize: 17, color: C.text, lineHeight: 1.8,
-          whiteSpace: "pre-wrap", margin: 0,
-        }}>{result}</pre>
+    <Screen title="Your Outfit" subtitle={`For ${occasionLabel}`}>
+      <div
+        role="region"
+        aria-label="Outfit suggestion"
+        style={{
+          background: C.surface, borderRadius: 16, padding: 20,
+          border: `1px solid ${C.border}`, marginBottom: 20,
+        }}
+      >
+        <p style={{
+          fontFamily: FONT, fontSize: 18, color: C.text, lineHeight: 1.8, margin: 0,
+        }}>{result}</p>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <BigButton
-          label="Try Different Options"
-          hint="Choose a new occasion and mood"
-          icon="🔄"
-          onClick={() => { setPhase("occasion"); setOccasion(null); setMood(null); setResult(""); }}
-        />
-        <BigButton
           label="Read Again"
-          hint="Hear the suggestions again"
+          hint="Hear the outfit suggestion again"
           icon="🔊"
           onClick={() => speak(result)}
+        />
+        <BigButton
+          label="Try a Different Occasion"
+          hint="Choose a new occasion for a fresh suggestion"
+          icon="🔄"
+          onClick={() => { setPhase("occasion"); setOccasion(null); setResult(""); }}
         />
       </div>
     </Screen>
