@@ -46,13 +46,20 @@ export default function useVoiceInput({ onResult, continuous = true, lang = "en-
 
     recognition.onerror = (event) => {
       if (event.error === "no-speech" || event.error === "aborted") return;
+      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+        recognitionRef.current._shouldListen = false;
+        setIsListening(false);
+        setSupported(false);
+        return;
+      }
       console.warn("Speech recognition error:", event.error);
     };
 
     recognition.onend = () => {
-      // Auto-restart if we're supposed to be listening
+      // If paused for TTS — do nothing; resumeListening() will call start() when ready
+      if (recognitionRef.current?._paused) return;
       if (recognitionRef.current?._shouldListen) {
-        try { recognition.start(); } catch {}
+        try { recognition.start(); } catch { setIsListening(false); }
       } else {
         setIsListening(false);
       }
@@ -60,6 +67,7 @@ export default function useVoiceInput({ onResult, continuous = true, lang = "en-
 
     recognitionRef.current = recognition;
     recognitionRef.current._shouldListen = false;
+    recognitionRef.current._paused = false;
 
     return () => {
       recognitionRef.current._shouldListen = false;
