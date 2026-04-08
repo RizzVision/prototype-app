@@ -49,6 +49,83 @@ GARMENT_DISPLAY_NAMES = {
 }
 
 
+# ── CLIP clothing verification ────────────────────────────────────────────────
+# These prompts represent what we accept vs what we reject.
+# CLIP picks the highest-scoring prompt; if the winner is not in _CLOTHING_PROMPTS
+# and the margin over the best clothing prompt exceeds the threshold, we reject.
+_CLOTHING_PROMPTS = [
+    "a photo of a clothing item laid flat or worn by a person",
+    "a shirt, t-shirt, top, blouse, or jacket",
+    "trousers, jeans, pants, skirt, or shorts",
+    "a dress, jumpsuit, or full body garment",
+    "a person wearing an outfit",
+    "clothing on a hanger or mannequin",
+]
+
+_NON_CLOTHING_PROMPTS = [
+    "a random everyday object with no clothing",
+    "food, furniture, electronics, or a vehicle",
+    "a landscape, building, or outdoor scene",
+    "a face or body with no visible clothing",
+    "text, a document, or a screen",
+]
+
+# If non-clothing confidence exceeds clothing confidence by this margin, reject.
+_CLIP_REJECTION_MARGIN = 0.12
+
+
+def _verify_clothing_with_clip(img: Image.Image) -> None:
+    """
+    Use CLIP to verify the image contains clothing before running the LLM.
+
+    Raises ImageQualityError if the image is confidently not clothing.
+    Falls back silently if CLIP is unavailable — SegFormer result stands.
+    """
+    try:
+        from app.services.color_engine.occasion_engine import _clip_model
+        import torch
+
+        if not _clip_model._loaded:
+            _clip_model.load()
+        if not _clip_model._loaded:
+            return  # CLIP unavailable — skip verification, don't block
+
+        all_prompts = _CLOTHING_PROMPTS + _NON_CLOTHING_PROMPTS
+        n_clothing = len(_CLOTHING_PROMPTS)
+
+        with torch.inference_mode():
+            inputs = _clip_model._processor(
+                text=all_prompts,
+                images=img,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=77,
+            )
+            outputs = _clip_model._model(**inputs)
+            logits = outputs.logits_per_image  # (1, n_prompts)
+            probs = torch.softmax(logits, dim=-1).squeeze(0).cpu().numpy()
+
+        clothing_score = float(probs[:n_clothing].sum())
+        non_clothing_score = float(probs[n_clothing:].sum())
+
+        logger.info(
+            f"CLIP clothing check: clothing={clothing_score:.3f}, "
+            f"non_clothing={non_clothing_score:.3f}"
+        )
+
+        if non_clothing_score - clothing_score > _CLIP_REJECTION_MARGIN:
+            raise ImageQualityError(
+                error_code="no_garment_detected",
+                user_message="No clothing detected. Please point the camera at a single clothing item and try again.",
+            )
+
+    except ImageQualityError:
+        raise  # re-raise the rejection
+    except Exception as exc:
+        logger.warning(f"CLIP clothing verification failed ({exc}) — proceeding without it")
+
+
 @dataclass
 class GarmentRegion:
     """A detected garment with its binary mask and label."""
@@ -115,7 +192,7 @@ class SegmentationModel:
         regions = []
         for model_label, garment_category in GARMENT_LABEL_MAP.items():
             mask = pred == model_label
-            if mask.sum() > (mask.size * 0.005):
+            if mask.sum() > (mask.size * 0.02):  # require 2% pixel coverage — filters marginal misclassifications
                 existing = next(
                     (r for r in regions if r.label == garment_category), None
                 )
@@ -133,8 +210,13 @@ class SegmentationModel:
         if not regions:
             raise ImageQualityError(
                 error_code="no_garment_detected",
-                user_message="I could not detect any clothing. Please make sure your full outfit is visible in good lighting.",
+                user_message="No clothing detected. Please point the camera at a single clothing item and try again.",
             )
+
+        # Second gate: CLIP verification that this is actually clothing on a person.
+        # SegFormer can misclassify random objects as garment regions at low pixel
+        # coverage. CLIP provides a high-accuracy semantic check before the LLM runs.
+        _verify_clothing_with_clip(img)
 
         # Extract skin mask (face + arms)
         skin_mask = np.zeros(pred.shape, dtype=bool)

@@ -33,6 +33,9 @@ function pickBestVoice() {
   return voices.find(v => v.lang.startsWith("en")) ?? voices[0] ?? null;
 }
 
+// Exported for use outside the hook (e.g., stopping speech on navigation)
+export function stopSpeech() { synth?.cancel(); }
+
 export default function useSpeechOutput() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const lastUtteranceRef = useRef("");

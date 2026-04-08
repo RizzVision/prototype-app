@@ -5,25 +5,26 @@ import { parseCommand } from "../voice/commandParser";
 import { useApp } from "./AppContext";
 import { useWardrobe } from "./WardrobeContext";
 import { RESPONSES } from "../voice/voiceResponses";
+import { playCommandRecognized } from "../utils/sounds";
 
 const VoiceContext = createContext();
 
 export function VoiceProvider({ children, announce, onScreenCommand }) {
-  const { navigate, goBack } = useApp();
-  const { removeLast, items } = useWardrobe();
+  const { navigate, goBack, descriptionMode, toggleDescriptionMode, setDescriptionMode } = useApp();
+  const { removeLast } = useWardrobe();
   const { speak, stop, repeat, isSpeaking } = useSpeechOutput();
 
   const handleVoiceResult = useCallback((transcript) => {
     const command = parseCommand(transcript);
     if (!command) return;
+    playCommandRecognized();
 
     switch (command.type) {
       case "NAVIGATE":
-        speak(RESPONSES.goBack);
+        // Destination screen announces itself — no TTS here to avoid overlap
         navigate(command.screen);
         break;
       case "GO_BACK":
-        speak(RESPONSES.goBack);
         goBack();
         break;
       case "REPEAT":
@@ -38,6 +39,21 @@ export function VoiceProvider({ children, announce, onScreenCommand }) {
         else speak(RESPONSES.noItemToDelete);
         break;
       }
+      case "SET_DESC_MODE": {
+        setDescriptionMode(command.mode);
+        const msg = command.mode === "short" ? RESPONSES.shortDescOn : RESPONSES.longDescOn;
+        speak(msg);
+        if (announce) announce(msg, "polite");
+        break;
+      }
+      case "TOGGLE_DESC_MODE": {
+        toggleDescriptionMode();
+        const nextMode = descriptionMode === "short" ? "long" : "short";
+        const msg = nextMode === "short" ? RESPONSES.shortDescOn : RESPONSES.longDescOn;
+        speak(msg);
+        if (announce) announce(msg, "polite");
+        break;
+      }
       case "READ_WARDROBE":
       case "FILTER_WARDROBE":
       case "SAVE_ITEM":
@@ -50,16 +66,28 @@ export function VoiceProvider({ children, announce, onScreenCommand }) {
       case "READ_RESULT":
       case "SELECT_OCCASION":
       case "SELECT_MOOD":
-        // Forward screen-specific commands
         if (onScreenCommand) onScreenCommand(command);
         break;
       default:
         break;
     }
-  }, [navigate, goBack, speak, stop, repeat, removeLast, onScreenCommand]);
+  }, [navigate, goBack, speak, stop, repeat, removeLast, onScreenCommand, descriptionMode, toggleDescriptionMode, setDescriptionMode, announce]);
 
-  const { isListening, transcript, supported, startListening, stopListening, toggleListening } =
-    useVoiceInput({ onResult: handleVoiceResult });
+  const {
+    isListening, transcript, supported,
+    startListening, stopListening, pauseListening, resumeListening, toggleListening,
+  } = useVoiceInput({ onResult: handleVoiceResult });
+
+  // Mute mic while TTS speaks — prevents the app from hearing its own voice output.
+  // Resume 400ms after speech ends to let the audio card fully clear.
+  useEffect(() => {
+    if (isSpeaking) {
+      pauseListening();
+    } else {
+      const timer = setTimeout(resumeListening, 400);
+      return () => clearTimeout(timer);
+    }
+  }, [isSpeaking, pauseListening, resumeListening]);
 
   return (
     <VoiceContext.Provider value={{

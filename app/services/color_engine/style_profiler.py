@@ -41,6 +41,8 @@ class StyleResult:
     archetype_confidence: float = 0.0
     coherence_score: float = 0.0
     archetype_scores: dict = field(default_factory=dict)
+    # All archetypes that score within 70% of the top score — multi-label output
+    top_archetypes: list[str] = field(default_factory=list)
     description: str = ""
     flags: list[str] = field(default_factory=list)
 
@@ -497,7 +499,7 @@ def analyze_style(
         s = _score_archetype(defn, valid_colors, garment_labels, hsl_values, spread)
         result.archetype_scores[defn["name"]] = s
 
-    # Primary archetype
+    # Primary archetype and multi-label top archetypes
     if result.archetype_scores:
         best_name = max(result.archetype_scores, key=result.archetype_scores.get)
         best_score = result.archetype_scores[best_name]
@@ -508,6 +510,14 @@ def analyze_style(
             if defn["name"] == best_name:
                 result.description = defn["description"]
                 break
+
+        # Include all archetypes scoring within 70% of the top score
+        # so a versatile item isn't forced into one bucket
+        threshold = best_score * 0.70
+        result.top_archetypes = [
+            name for name, score in sorted(result.archetype_scores.items(), key=lambda x: -x[1])
+            if score >= threshold
+        ]
 
     # Coherence
     result.coherence_score = _compute_coherence(hsl_values, result.archetype_scores)

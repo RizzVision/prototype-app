@@ -38,8 +38,8 @@ RULES:
 10. The top fix must be the single most impactful change the user can make right now.
 11. You understand Indian fashion vocabulary: kurta, dhoti, saree, sherwani, dupatta, salwar, churidar, lehenga, etc.
 12. When skin tone data is available, weave it naturally into color feedback. Do not make it awkward or clinical.
-13. Reference the detected style archetype if it adds value. Do not force it.
-14. For occasion feedback, mention the best-matching occasion naturally.
+13. Reference the detected style archetypes if they add value. Mention the range — do not force a single label.
+14. For occasion feedback, mention ALL suitable occasions from the list. A plain white shirt works for office, casual, and a date — say so. Never collapse a multi-occasion item into one category.
 15. Count physically separate garments only. A shirt with a contrast collar, stripes, or colorblock pattern is ONE garment entry. Describe multi-color details within the description field. Only create separate garment entries for items that can be worn independently (e.g., a jacket + jeans).
 
 Return ONLY valid JSON. No markdown. No preamble. No explanation outside the JSON.
@@ -85,7 +85,7 @@ def _get_client():
 
 
 def _build_color_context(engine_result: ColorEngineResult) -> str:
-    """Build comprehensive colour context from the full engine output."""
+    """Build analysis context from the engine output (no harmony or seasonal scores)."""
     lines = [
         "═══ PRE-COMPUTED ANALYSIS (trust these values, do not recompute) ═══",
         "",
@@ -95,25 +95,6 @@ def _build_color_context(engine_result: ColorEngineResult) -> str:
     lines.append("GARMENTS DETECTED:")
     for gd in engine_result.garment_details:
         lines.append(f"  - {gd['display_name']}: {gd['color_name']} ({gd['hex_color']})")
-    lines.append("")
-
-    # Master score
-    lines.append(f"OVERALL COLOUR SCORE: {engine_result.overall_score}/1.00 ({engine_result.overall_label})")
-    lines.append("")
-
-    # Harmony details
-    h = engine_result.harmony
-    lines.append(f"HARMONY: pattern={h.hue_pattern}, hue={h.hue_score}, "
-                 f"lightness={h.lightness_score}, saturation={h.saturation_score}, "
-                 f"temperature={h.temperature_score}, contrast={h.contrast_score}")
-
-    if h.pairwise:
-        lines.append("Pairwise analysis:")
-        for p in h.pairwise:
-            lines.append(
-                f"  {p['garment_a']} + {p['garment_b']}: {p['relationship']} "
-                f"(deltaE={p['delta_e']}, contrast={p['contrast_ratio']})"
-            )
     lines.append("")
 
     # Skin tone (if detected)
@@ -128,19 +109,6 @@ def _build_color_context(engine_result: ColorEngineResult) -> str:
                 lines.append(f"  {label}: {score:.2f} ({level})")
         lines.append("")
 
-    # Seasonal analysis
-    seasonal = engine_result.seasonal
-    if seasonal.season != "unknown":
-        lines.append(f"SEASONAL TYPE: {seasonal.season} ({seasonal.sub_type})")
-        lines.append(f"Seasonal compatibility: {seasonal.overall_compatibility:.2f}")
-        for pg in seasonal.per_garment:
-            lines.append(f"  {pg['label']} ({pg['color_name']}): {pg['recommendation']}")
-        if seasonal.palette_suggestions:
-            from app.services.color_engine.color_science import name_color
-            suggestions = [name_color(c) for c in seasonal.palette_suggestions]
-            lines.append(f"Suggested additions: {', '.join(suggestions)}")
-        lines.append("")
-
     # Proportion
     prop = engine_result.proportion
     if prop.actual_ratios:
@@ -148,25 +116,21 @@ def _build_color_context(engine_result: ColorEngineResult) -> str:
         for r in prop.actual_ratios:
             pct = int(r["ratio"] * 100)
             lines.append(f"  {r['label']}: {pct}% ({r['role']})")
-        lines.append(f"Proportion score: {prop.score:.2f}")
         lines.append("")
 
-    # Occasion
+    # Occasion — multi-label: list all suitable occasions
     occ = engine_result.occasion
     lines.append(f"FORMALITY: {occ.formality_level} ({occ.formality_score:.2f})")
-    lines.append(f"Best occasion: {occ.best_occasion}")
-    top_occasions = sorted(occ.occasions, key=lambda o: o.score, reverse=True)[:3]
-    for o in top_occasions:
-        lines.append(f"  {o.occasion}: {o.score:.2f}")
+    lines.append(f"SUITABLE OCCASIONS (this item works for all of these — do not pick just one):")
+    for o in occ.occasions:
+        lines.append(f"  - {o.occasion} ({o.score:.1%})")
     lines.append("")
 
-    # Style
+    # Style — multi-label: list all matching archetypes
     style = engine_result.style
-    lines.append(f"STYLE: {style.primary_archetype} "
-                 f"(confidence={style.archetype_confidence:.2f}, "
-                 f"coherence={style.coherence_score:.2f})")
-    if style.description:
-        lines.append(f"  Description: {style.description}")
+    lines.append(f"STYLE ARCHETYPES (this item fits all of these — mention the range):")
+    for arch in style.top_archetypes:
+        lines.append(f"  - {arch}")
     lines.append("")
 
     # Flags and messages

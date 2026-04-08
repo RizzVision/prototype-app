@@ -121,12 +121,14 @@ def shape_response(
     # ── 4. Fit / occasion / style feedback ───────────────────────────────────
     fit_text = _clean_for_tts(llm_feedback.get("fit_feedback", ""))
     if fit_text:
-        # Append best occasion hint if not already covered
-        best_occ = engine.occasion.best_occasion
-        if best_occ and best_occ.lower() not in fit_text.lower():
-            fit_text = _clean_for_tts(
-                f"{fit_text} This outfit is most suitable for {best_occ}."
-            )
+        # If the LLM didn't mention occasions and we have multiple, append them
+        occasion_names = [o.occasion for o in engine.occasion.occasions]
+        if occasion_names and not any(o.lower() in fit_text.lower() for o in occasion_names):
+            if len(occasion_names) == 1:
+                fit_text = _clean_for_tts(f"{fit_text} This works best for {occasion_names[0]}.")
+            else:
+                joined = ", ".join(occasion_names[:-1]) + f" and {occasion_names[-1]}"
+                fit_text = _clean_for_tts(f"{fit_text} This works for {joined}.")
         segments.append({"id": "fit_feedback", "text": fit_text})
 
     # ── 5. Overall verdict ───────────────────────────────────────────────────

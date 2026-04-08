@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { AppProvider, useApp } from "./contexts/AppContext";
@@ -16,6 +16,8 @@ import ShoppingScreen from "./screens/ShoppingScreen";
 import MirrorScreen from "./screens/MirrorScreen";
 import EditItemScreen from "./screens/EditItemScreen";
 import { SCREENS, C, FONT } from "./utils/constants";
+import { playNav } from "./utils/sounds";
+import { stopSpeech } from "./hooks/useSpeechOutput";
 
 const SCREEN_TITLES = {
   [SCREENS.HOME]:      "Home",
@@ -131,11 +133,18 @@ function SkipLink() {
 function AppShell() {
   const { announce, LiveRegions } = useAnnounce();
   const { screen } = useApp();
+  const isFirstRender = useRef(true);
 
-  // On every screen change: update document title, announce new screen, move focus to <main>
+  // On every screen change: stop ongoing speech, update title, announce screen, move focus
   useEffect(() => {
     const label = SCREEN_TITLES[screen] ?? "Rizzvision";
     document.title = `${label} — Rizzvision`;
+    stopSpeech();
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+    } else {
+      playNav();
+    }
     announce(label, "assertive");
     // Small delay allows the new screen's DOM to render before focusing
     const id = setTimeout(() => {

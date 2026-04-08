@@ -1,6 +1,8 @@
 import { C, FONT } from "../utils/constants";
+import { playTap } from "../utils/sounds";
 
 export default function BigButton({ label, hint, icon, onClick, variant = "default", disabled, type = "button" }) {
+  const handleClick = () => { playTap(); onClick?.(); };
   const bg = variant === "primary"  ? C.focus
            : variant === "success"  ? C.success
            : variant === "danger"   ? C.danger
@@ -10,7 +12,7 @@ export default function BigButton({ label, hint, icon, onClick, variant = "defau
   return (
     <button
       type={type}
-      onClick={onClick}
+      onClick={disabled ? undefined : handleClick}
       disabled={disabled}
       aria-label={hint ? `${label}. ${hint}` : label}
       aria-disabled={disabled}

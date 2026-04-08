@@ -6,30 +6,38 @@ import { useApp } from "../contexts/AppContext";
 import { useVoice } from "../contexts/VoiceContext";
 import { useWardrobe } from "../contexts/WardrobeContext";
 import { getOutfitSuggestion } from "../services/outfitRecommendation";
-import { OCCASIONS, MOODS, SCREENS, C, FONT } from "../utils/constants";
+import { OCCASIONS, SCREENS, C, FONT } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
 
+function getShortSuggestion(text) {
+  if (!text) return "";
+  const sentences = text.split(". ");
+  return sentences.length > 1 ? sentences[0] + ". " + sentences[1] + "." : sentences[0];
+}
+
 export default function OutfitScreen() {
-  const { navParams, navigate } = useApp();
+  const { navParams, navigate, descriptionMode, toggleDescriptionMode } = useApp();
   const { speak } = useVoice();
   const { items } = useWardrobe();
-  const [phase, setPhase] = useState("occasion"); // occasion | mood | loading | result
+  const [phase, setPhase] = useState("occasion"); // occasion | loading | result
   const [occasion, setOccasion] = useState(null);
-  const [mood, setMood] = useState(null);
   const [result, setResult] = useState("");
 
   const anchorItem = navParams?.anchorItem || null;
 
   useEffect(() => {
-    if (items.length === 0) {
-      speak("Your wardrobe is empty. Add some items first by scanning clothing.");
-      return;
-    }
-    if (anchorItem) {
-      speak(`Building an outfit around your ${anchorItem.name}. What occasion are you dressing for?`);
-    } else {
-      speak(RESPONSES.outfitPrompt);
-    }
+    const timer = setTimeout(() => {
+      if (items.length === 0) {
+        speak("Your wardrobe is empty. Add some items first by scanning clothing.");
+        return;
+      }
+      if (anchorItem) {
+        speak(`Building an outfit around your ${anchorItem.name}. What occasion are you dressing for?`);
+      } else {
+        speak(RESPONSES.outfitPrompt);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -37,40 +45,27 @@ export default function OutfitScreen() {
     setOccasion(id);
   }, []);
 
-  const handleMoodSelect = useCallback((id) => {
-    setMood(id);
-  }, []);
-
-  const proceedToMood = useCallback(() => {
-    if (!occasion) return;
-    const label = OCCASIONS.find(o => o.id === occasion)?.label || occasion;
-    speak(RESPONSES.moodPrompt(label));
-    setPhase("mood");
-  }, [occasion, speak]);
-
   const generateOutfit = useCallback(async () => {
-    if (!mood) return;
+    if (!occasion) return;
     setPhase("loading");
     speak(RESPONSES.generating);
 
     const occasionLabel = OCCASIONS.find(o => o.id === occasion)?.label || occasion;
-    const moodLabel = MOODS.find(m => m.id === mood)?.label || mood;
 
     try {
       const response = await getOutfitSuggestion({
         items,
         occasion: occasionLabel,
-        mood: moodLabel,
         anchorItem,
       });
       setResult(response);
       setPhase("result");
-      speak(response);
+      speak(descriptionMode === "short" ? getShortSuggestion(response) : response);
     } catch {
       speak(RESPONSES.error);
       setPhase("occasion");
     }
-  }, [mood, occasion, items, anchorItem, speak]);
+  }, [occasion, items, anchorItem, speak]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -78,19 +73,15 @@ export default function OutfitScreen() {
       if (cmd.type === "SELECT_OCCASION" && phase === "occasion") {
         handleOccasionSelect(cmd.id);
         speak(OCCASIONS.find(o => o.id === cmd.id)?.label ?? cmd.id);
-      } else if (cmd.type === "SELECT_MOOD" && phase === "mood") {
-        handleMoodSelect(cmd.id);
-        speak(MOODS.find(m => m.id === cmd.id)?.label ?? cmd.id);
       } else if (cmd.type === "CONFIRM") {
-        if (phase === "occasion" && occasion) proceedToMood();
-        else if (phase === "mood" && mood) generateOutfit();
+        if (phase === "occasion" && occasion) generateOutfit();
       } else if (cmd.type === "READ_RESULT" && phase === "result") {
-        speak(result);
+        speak(descriptionMode === "short" ? getShortSuggestion(result) : result);
       }
     };
     window.addEventListener("voiceCommand", handler);
     return () => window.removeEventListener("voiceCommand", handler);
-  }, [phase, occasion, mood, result, handleOccasionSelect, handleMoodSelect, proceedToMood, generateOutfit, speak]);
+  }, [phase, occasion, result, handleOccasionSelect, generateOutfit, speak]);
 
   if (items.length === 0) {
     return (
@@ -114,40 +105,20 @@ export default function OutfitScreen() {
     return (
       <Screen
         title="Outfit Help"
-        subtitle={anchorItem ? `Building around: ${anchorItem.name}` : "What occasion are you dressing for?"}
+        subtitle={anchorItem ? `Building around: ${anchorItem.name}` : "What's the occasion?"}
       >
         <ChoiceList
-          heading="Occasion"
+          heading="Pick your occasion"
           items={OCCASIONS}
           selected={occasion}
           onSelect={handleOccasionSelect}
         />
         <div style={{ marginTop: 16 }}>
           <BigButton
-            label="Next"
+            label="Get My Outfit"
+            hint="Generate outfit suggestions for the selected occasion"
             variant="primary"
             disabled={!occasion}
-            onClick={proceedToMood}
-          />
-        </div>
-      </Screen>
-    );
-  }
-
-  if (phase === "mood") {
-    return (
-      <Screen title="Outfit Help" subtitle="What vibe are you going for?">
-        <ChoiceList
-          heading="Mood"
-          items={MOODS}
-          selected={mood}
-          onSelect={handleMoodSelect}
-        />
-        <div style={{ marginTop: 16 }}>
-          <BigButton
-            label="Get Suggestions"
-            variant="primary"
-            disabled={!mood}
             onClick={generateOutfit}
           />
         </div>
@@ -157,7 +128,7 @@ export default function OutfitScreen() {
 
   if (phase === "loading") {
     return (
-      <Screen title="Thinking..." subtitle="Putting together some looks for you.">
+      <Screen title="Styling you up..." subtitle="Give me a second.">
         <div style={{ display: "flex", justifyContent: "center", padding: 60 }}>
           <div style={{
             width: 48, height: 48, borderRadius: "50%",
@@ -172,6 +143,8 @@ export default function OutfitScreen() {
   }
 
   // Result phase
+  const displayedResult = descriptionMode === "short" ? getShortSuggestion(result) : result;
+
   return (
     <Screen title="Your Outfits" subtitle={`For ${OCCASIONS.find(o => o.id === occasion)?.label || occasion}`}>
       <div style={{
@@ -181,21 +154,36 @@ export default function OutfitScreen() {
         <pre style={{
           fontFamily: FONT, fontSize: 17, color: C.text, lineHeight: 1.8,
           whiteSpace: "pre-wrap", margin: 0,
-        }}>{result}</pre>
+        }}>{displayedResult}</pre>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <BigButton
-          label="Try Different Options"
-          hint="Choose a new occasion and mood"
-          icon="🔄"
-          onClick={() => { setPhase("occasion"); setOccasion(null); setMood(null); setResult(""); }}
-        />
-        <BigButton
           label="Read Again"
           hint="Hear the suggestions again"
           icon="🔊"
-          onClick={() => speak(result)}
+          onClick={() => speak(displayedResult)}
+        />
+        <BigButton
+          label={descriptionMode === "short" ? "Switch to Long Description" : "Switch to Short Description"}
+          hint={descriptionMode === "short"
+            ? "Short summaries are on. Tap to switch to full descriptions."
+            : "Full descriptions are on. Tap to switch to short summaries."}
+          icon="📝"
+          onClick={() => {
+            toggleDescriptionMode();
+            const msg = descriptionMode === "short"
+              ? "Switched to long descriptions."
+              : "Switched to short descriptions.";
+            speak(msg);
+            setTimeout(() => speak(descriptionMode === "short" ? result : getShortSuggestion(result)), 1200);
+          }}
+        />
+        <BigButton
+          label="Try Different Options"
+          hint="Choose a new occasion"
+          icon="🔄"
+          onClick={() => { setPhase("occasion"); setOccasion(null); setResult(""); }}
         />
       </div>
     </Screen>
