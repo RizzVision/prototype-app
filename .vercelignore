@@ -1,0 +1,12 @@
+# Backend — deployed to HuggingFace Spaces, not Vercel
+app/
+backend/
+main.py
+requirements.txt
+Dockerfile
+hf_cache/
+
+# Local env files
+.env
+.env.local
+.env.production
