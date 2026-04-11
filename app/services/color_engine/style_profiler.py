@@ -511,9 +511,9 @@ def analyze_style(
                 result.description = defn["description"]
                 break
 
-        # Include all archetypes scoring within 70% of the top score
-        # so a versatile item isn't forced into one bucket
-        threshold = best_score * 0.70
+        # Include all archetypes scoring within 75% of the top score.
+        # Tighter threshold reduces contradictory signals sent to the LLM.
+        threshold = best_score * 0.75
         result.top_archetypes = [
             name for name, score in sorted(result.archetype_scores.items(), key=lambda x: -x[1])
             if score >= threshold

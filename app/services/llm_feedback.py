@@ -27,20 +27,20 @@ Your feedback will be read aloud by a screen reader. Every sentence must be shor
 
 RULES:
 1. Be direct. Do not soften feedback to be polite.
-2. Be humane. Explain why something works or does not.
+2. Be humane. Explain why something works or does not work.
 3. Keep every sentence under 15 words. This will be read aloud.
 4. Never use visual metaphors the user cannot reference. Avoid words like "looks sharp", "pops", "clean aesthetic", "eye-catching".
 5. Use concrete language: "the dark blue shirt" not "the top piece" or "the garment". You may use your own color descriptions from the image — be specific and vivid. Pre-computed color names are a guide, not a constraint.
-6. Trust ALL pre-computed scores completely. Do not guess at colour compatibility, skin tone analysis, or occasion suitability. Narrate the scores, flags, and recommendations provided.
+6. Trust ALL pre-computed scores and the OUTFIT SCORE completely. Do not invent or guess compatibility, skin tone analysis, or occasion suitability. Narrate the scores and flags provided. Never contradict them.
 7. When describing garments, include tactile details: fabric weight impression, fit type, neckline, sleeve length.
 8. Assess proportion, silhouette, and general occasion suitability in fit feedback.
-9. The overall verdict must be one honest sentence. Not cruel. Not false.
+9. The overall verdict must reflect the OUTFIT SCORE honestly. excellent/good = positive verdict. fair/poor = constructive criticism.
 10. The top fix must be the single most impactful change the user can make right now.
 11. You understand Indian fashion vocabulary: kurta, dhoti, saree, sherwani, dupatta, salwar, churidar, lehenga, etc.
-12. When skin tone data is available, weave it naturally into color feedback. Do not make it awkward or clinical.
+12. When skin compatibility data is available, weave it naturally into color feedback. Do not make it awkward or clinical. If compatibility is poor for a garment, say which colour is the problem and why.
 13. Reference the detected style archetypes if they add value. Mention the range — do not force a single label.
-14. For occasion feedback, mention ALL suitable occasions from the list. A plain white shirt works for office, casual, and a date — say so. Never collapse a multi-occasion item into one category.
-15. Count physically separate garments only. A shirt with a contrast collar, stripes, or colorblock pattern is ONE garment entry. Describe multi-color details within the description field. Only create separate garment entries for items that can be worn independently (e.g., a jacket + jeans).
+14. For occasion feedback, mention ALL suitable occasions from the list. Never collapse a multi-occasion item into one category.
+15. Count physically separate garments only. A shirt with a contrast collar, stripes, or colorblock pattern is ONE garment entry. Only create separate garment entries for items that can be worn independently (e.g., a jacket + jeans).
 
 Return ONLY valid JSON. No markdown. No preamble. No explanation outside the JSON.
 
@@ -55,10 +55,10 @@ Output schema:
 
 Field guidance:
 - garments: List each visible garment with a tactile description including fabric weight impression, fit type, neckline, sleeve length.
-- color_feedback: Narrate the pre-computed harmony score and all diagnostic findings. Reference skin compatibility if available. Mention specific color names. If score < 0.5, explain what clashes and why. If score > 0.7, explain why it works.
-- fit_feedback: Assess proportion, silhouette, occasion suitability. Reference the detected best occasion and style archetype.
-- overall_verdict: One sentence. Honest. Not cruel. Not false.
-- top_fix: The single most impactful change. Use the recommendations provided when available."""
+- color_feedback: Start by anchoring on the OUTFIT SCORE provided. Then narrate any skin compatibility findings, diagnostic flags, and specific color names. If the outfit score is poor or fair, explain concretely what is causing the issue. If good or excellent, say why it works.
+- fit_feedback: Assess proportion, silhouette, and occasion suitability. Reference the detected occasions and style archetype.
+- overall_verdict: One sentence. Must align with the outfit score — do not be falsely positive when the score is poor.
+- top_fix: The single most impactful change. Use the TOP RECOMMENDATIONS provided — do not invent your own."""
 
 REPAIR_PROMPT = """The previous response was not valid JSON. Here is the raw response:
 
@@ -85,11 +85,22 @@ def _get_client():
 
 
 def _build_color_context(engine_result: ColorEngineResult) -> str:
-    """Build analysis context from the engine output (no harmony or seasonal scores)."""
+    """Build analysis context from the engine output."""
     lines = [
         "═══ PRE-COMPUTED ANALYSIS (trust these values, do not recompute) ═══",
         "",
     ]
+
+    # Overall outfit score — anchor the LLM here first
+    score_pct = int(engine_result.outfit_score * 100)
+    lines.append(
+        f"OUTFIT SCORE: {score_pct}/100 ({engine_result.outfit_score_label.upper()})"
+    )
+    lines.append(
+        "This score reflects skin compatibility, colour proportion, and style coherence. "
+        "Your color_feedback and overall_verdict MUST align with this score."
+    )
+    lines.append("")
 
     # Garment colors with names
     lines.append("GARMENTS DETECTED:")
@@ -204,8 +215,8 @@ Based on the image and the pre-computed data above, provide your structured feed
 
     config = types.GenerateContentConfig(
         system_instruction=SYSTEM_PROMPT,
-        max_output_tokens=600,
-        temperature=0.4,
+        max_output_tokens=900,
+        temperature=0.2,
     )
 
     # First attempt
@@ -234,7 +245,7 @@ Based on the image and the pre-computed data above, provide your structured feed
         response = client.models.generate_content(
             model=settings.GEMINI_MODEL,
             contents=repair_msg,
-            config=types.GenerateContentConfig(max_output_tokens=600, temperature=0.2),
+            config=types.GenerateContentConfig(max_output_tokens=900, temperature=0.1),
         )
         feedback = _parse_llm_json(response.text)
         return _validate_feedback(feedback)

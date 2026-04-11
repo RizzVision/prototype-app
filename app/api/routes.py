@@ -64,6 +64,8 @@ def _engine_to_raw(engine) -> dict:
         "flags": engine.all_flags,
         "flag_messages": engine.flag_messages,
         "recommendations": engine.recommendations,
+        "outfit_score": engine.outfit_score,
+        "outfit_score_label": engine.outfit_score_label,
     }
 
 

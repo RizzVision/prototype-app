@@ -46,6 +46,12 @@ class ColorEngineResult:
     # Top recommendations (skin/proportion based only)
     recommendations: list[str] = field(default_factory=list)
 
+    # Overall outfit compatibility score (0.0–1.0).
+    # Derived from skin compatibility + proportion + style coherence.
+    # Passed directly to the LLM so it doesn't have to guess.
+    outfit_score: float = 0.0
+    outfit_score_label: str = "unknown"  # poor / fair / good / excellent
+
 
 _FLAG_MESSAGES = {
     # Proportion flags
@@ -97,6 +103,67 @@ def _generate_recommendations(result: ColorEngineResult) -> list[str]:
         recs.append("The overall composition works well for the detected occasions.")
 
     return recs[:3]
+
+
+def _compute_outfit_score(result: ColorEngineResult) -> tuple[float, str]:
+    """
+    Compute a single 0–1 outfit compatibility score.
+
+    Weighted combination of:
+      - Skin compatibility (40% if detected, else redistributed)
+      - Proportion balance (35%)
+      - Style coherence (25%)
+
+    Flags act as deductions on top.
+    """
+    skin_weight = 0.40
+    prop_weight = 0.35
+    style_weight = 0.25
+
+    # Skin sub-score
+    if result.skin.detected and result.skin.garment_scores:
+        avg_skin = sum(result.skin.garment_scores.values()) / len(result.skin.garment_scores)
+        skin_score = avg_skin
+    else:
+        # Redistribute skin weight to proportion + style
+        skin_score = 0.0
+        prop_weight += skin_weight * 0.6
+        style_weight += skin_weight * 0.4
+        skin_weight = 0.0
+
+    # Proportion sub-score (already 0–1)
+    prop_score = result.proportion.score if result.proportion.score > 0 else 0.65
+
+    # Style coherence sub-score (already 0–1)
+    style_score = result.style.coherence_score if result.style.coherence_score > 0 else 0.50
+
+    raw = skin_weight * skin_score + prop_weight * prop_score + style_weight * style_score
+
+    # Flag deductions — each flag shaves off a fixed amount
+    flag_deductions = {
+        "skin_clash": 0.10,
+        "unflattering_color": 0.08,
+        "competing_dominance": 0.06,
+        "accent_overpowers": 0.05,
+        "unclear_style_direction": 0.05,
+        "low_coherence": 0.04,
+        "no_dominant_color": 0.04,
+    }
+    for flag in result.all_flags:
+        raw -= flag_deductions.get(flag, 0.0)
+
+    score = round(max(0.0, min(1.0, raw)), 2)
+
+    if score >= 0.75:
+        label = "excellent"
+    elif score >= 0.58:
+        label = "good"
+    elif score >= 0.40:
+        label = "fair"
+    else:
+        label = "poor"
+
+    return score, label
 
 
 def run_color_engine(
@@ -173,8 +240,12 @@ def run_color_engine(
     # --- Generate recommendations ---
     result.recommendations = _generate_recommendations(result)
 
+    # --- Compute overall outfit score ---
+    result.outfit_score, result.outfit_score_label = _compute_outfit_score(result)
+
     logger.info(
-        f"Color Engine: occasions={[o.occasion for o in occasion_result.occasions[:3]]}, "
+        f"Color Engine: outfit_score={result.outfit_score} ({result.outfit_score_label}), "
+        f"occasions={[o.occasion for o in occasion_result.occasions[:3]]}, "
         f"styles={[s for s in style_result.top_archetypes]}, "
         f"flags={result.all_flags}"
     )

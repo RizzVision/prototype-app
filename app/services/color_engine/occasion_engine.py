@@ -348,10 +348,10 @@ def analyze_occasion(
     best_key, best_score = sorted_occasions[0]
     best_display = OCCASION_DISPLAY.get(best_key, best_key)
 
-    # Include all occasions that score at least 60% of the top score,
-    # so a versatile item (e.g. a plain white shirt) gets multiple valid occasions
-    # rather than being forced into one bucket.
-    threshold = best_score * 0.60
+    # Include all occasions that score at least 65% of the top score.
+    # This prevents flooding the LLM with marginally-matching occasions
+    # while still surfacing genuinely versatile items.
+    threshold = best_score * 0.65
     occasions = [
         OccasionScore(
             occasion=OCCASION_DISPLAY.get(k, k),
