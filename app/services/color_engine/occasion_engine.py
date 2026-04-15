@@ -245,6 +245,66 @@ _clip_model = _CLIPOccasionModel.get()
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Public clothing-verification helper (used by garment_segmentation)
+# ──────────────────────────────────────────────────────────────────────────────
+
+def verify_image_contains_clothing(img: Image.Image) -> None:
+    """
+    Use CLIP to confirm the image contains clothing.
+
+    Raises ImageQualityError if the image is confidently not clothing.
+    Silently passes if CLIP is unavailable (SegFormer result stands).
+
+    Kept here so garment_segmentation.py never touches internal CLIP state.
+    """
+    from app.services.image_ingestion import ImageQualityError  # local import avoids circular dep
+
+    if not _clip_model._loaded:
+        _clip_model.load()
+    if not _clip_model._loaded:
+        return  # CLIP unavailable — skip, don't block
+
+    all_prompts = _CLOTHING_PROMPTS + _NON_CLOTHING_PROMPTS
+    n_clothing = len(_CLOTHING_PROMPTS)
+
+    try:
+        import torch
+        with torch.inference_mode():
+            inputs = _clip_model._processor(
+                text=all_prompts,
+                images=img,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=77,
+            )
+            outputs = _clip_model._model(**inputs)
+            logits = outputs.logits_per_image  # (1, n_prompts)
+            probs = torch.softmax(logits, dim=-1).squeeze(0).cpu().numpy()
+
+        clothing_score = float(probs[:n_clothing].sum())
+        non_clothing_score = float(probs[n_clothing:].sum())
+
+        logger.info(
+            f"CLIP clothing check: clothing={clothing_score:.3f}, "
+            f"non_clothing={non_clothing_score:.3f}"
+        )
+
+        if non_clothing_score - clothing_score > _CLIP_REJECTION_MARGIN:
+            raise ImageQualityError(
+                error_code="no_garment_detected",
+                user_message=(
+                    "No clothing detected. Please point the camera at a single "
+                    "clothing item and try again."
+                ),
+            )
+    except ImageQualityError:
+        raise
+    except Exception as exc:
+        logger.warning(f"CLIP clothing verification failed ({exc}) — proceeding without it")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Color-based fallback (simplified)
 # ──────────────────────────────────────────────────────────────────────────────
 

@@ -25,8 +25,12 @@ function reducer(state, action) {
   switch (action.type) {
     case "SET_ITEMS":
       return { ...state, items: action.items, loading: false, error: null };
-    case "ADD_ITEM":
+    case "ADD_ITEM": {
+      // Guard against real-time subscription delivering the INSERT before addItem resolves
+      const alreadyExists = state.items.some(i => i.id === action.item.id);
+      if (alreadyExists) return state;
       return { ...state, items: [action.item, ...state.items] };
+    }
     case "REMOVE_ITEM":
       return { ...state, items: state.items.filter(i => i.id !== action.id) };
     case "UPSERT_ITEM": {

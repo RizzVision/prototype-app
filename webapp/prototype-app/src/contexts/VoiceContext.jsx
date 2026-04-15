@@ -14,7 +14,7 @@ export function VoiceProvider({ children, announce, onScreenCommand }) {
   const { removeLast } = useWardrobe();
   const { speak, stop, repeat, isSpeaking } = useSpeechOutput();
 
-  const handleVoiceResult = useCallback((transcript) => {
+  const handleVoiceResult = useCallback(async (transcript) => {
     const command = parseCommand(transcript);
     if (!command) return;
     playCommandRecognized();
@@ -34,7 +34,7 @@ export function VoiceProvider({ children, announce, onScreenCommand }) {
         stop();
         break;
       case "DELETE_LAST_ITEM": {
-        const last = removeLast();
+        const last = await removeLast();
         if (last) speak(RESPONSES.itemDeleted(last.name));
         else speak(RESPONSES.noItemToDelete);
         break;

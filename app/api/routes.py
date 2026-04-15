@@ -10,7 +10,7 @@ from dataclasses import asdict
 
 import numpy as np
 from fastapi import APIRouter, UploadFile, File
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.errors.handlers import ERROR_MESSAGES
 from app.services.image_ingestion import ImageQualityError, ingest_image, check_image_quality
@@ -148,8 +148,8 @@ class ShoppingAnalyzeRequest(BaseModel):
 
 class ShoppingFollowUpRequest(BaseModel):
     """Follow-up question about the last scanned item."""
-    question: str
-    last_analysis_context: str  # Brief context from the previous analysis
+    question: str = Field(..., max_length=500)
+    last_analysis_context: str = Field(..., max_length=2000)
 
 
 @router.post("/shopping-analyze")
@@ -326,9 +326,9 @@ async def shopping_followup(req: ShoppingFollowUpRequest):
 
 
 class OutfitSuggestionRequest(BaseModel):
-    occasion: str
-    wardrobe: str
-    anchor: str = ""
+    occasion: str = Field(..., max_length=100)
+    wardrobe: str = Field(..., max_length=4000)
+    anchor: str = Field("", max_length=200)
 
 
 @router.post("/outfit-suggestion")

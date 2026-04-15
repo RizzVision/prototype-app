@@ -89,6 +89,16 @@ export default function ScanScreen() {
   const captureRef = useRef(null);
   const resultHeadingRef = useRef(null);
   const nameInputRef = useRef(null);
+  const activeRequestRef = useRef(null);  // AbortController for in-flight analyzeOutfit
+  const navTimerRef = useRef(null);       // setTimeout handle for post-save navigation
+
+  // Cancel any pending navigation timer and in-flight request on unmount
+  useEffect(() => {
+    return () => {
+      if (navTimerRef.current) clearTimeout(navTimerRef.current);
+      if (activeRequestRef.current) activeRequestRef.current.abort();
+    };
+  }, []);
 
   useEffect(() => {
     if (phase !== "camera") return;
@@ -120,6 +130,13 @@ export default function ScanScreen() {
   }, [speak, announce]);
 
   const handleCapture = useCallback(async (base64, dataUrl) => {
+    // Cancel any in-flight request from a previous capture
+    if (activeRequestRef.current) {
+      activeRequestRef.current.abort();
+    }
+    const controller = new AbortController();
+    activeRequestRef.current = controller;
+
     setPhase("analyzing");
     setPreviewUrl(dataUrl);
     capturedBase64Ref.current = base64;
@@ -127,7 +144,10 @@ export default function ScanScreen() {
     speak(RESPONSES.analyzing);
 
     try {
-      const analysis = await analyzeOutfit(base64);
+      const analysis = await analyzeOutfit(base64, { signal: controller.signal });
+      // Bail out silently if a newer capture has already taken over
+      if (controller.signal.aborted) return;
+      if (activeRequestRef.current === controller) activeRequestRef.current = null;
       const garments = analysis.raw?.garment_details || [];
 
       // If multiple garments detected, reject and ask user to scan one at a time
@@ -150,6 +170,8 @@ export default function ScanScreen() {
         speak(descText);
       }
     } catch (err) {
+      // Ignore errors from a request that was intentionally aborted (user retapped)
+      if (err.name === "AbortError") return;
       const msg =
         err instanceof ImageQualityError ? err.userMessage
         : err.message || RESPONSES.error;
@@ -208,7 +230,8 @@ export default function ScanScreen() {
       playSaved();
       speak(savedMsg);
       announce(savedMsg, "polite");
-      setTimeout(() => navigate(SCREENS.WARDROBE), 1500);
+      if (navTimerRef.current) clearTimeout(navTimerRef.current);
+      navTimerRef.current = setTimeout(() => navigate(SCREENS.WARDROBE), 1500);
     } catch {
       speak(RESPONSES.error);
       setPhase("result");

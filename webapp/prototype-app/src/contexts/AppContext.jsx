@@ -22,11 +22,11 @@ function reducer(state, action) {
       return { ...state, navParams: action.params };
     case "TOGGLE_DESC_MODE": {
       const next = state.descriptionMode === "short" ? "long" : "short";
-      localStorage.setItem("rizzv_desc_mode", next);
+      safeLocalSet("rizzv_desc_mode", next);
       return { ...state, descriptionMode: next };
     }
     case "SET_DESC_MODE": {
-      localStorage.setItem("rizzv_desc_mode", action.mode);
+      safeLocalSet("rizzv_desc_mode", action.mode);
       return { ...state, descriptionMode: action.mode };
     }
     default:
@@ -34,12 +34,20 @@ function reducer(state, action) {
   }
 }
 
+function safeLocalGet(key, fallback) {
+  try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; }
+}
+
+function safeLocalSet(key, value) {
+  try { localStorage.setItem(key, value); } catch {}
+}
+
 export function AppProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, {
     screen: SCREENS.HOME,
     screenHistory: [],
     navParams: null,
-    descriptionMode: localStorage.getItem("rizzv_desc_mode") || "short",
+    descriptionMode: safeLocalGet("rizzv_desc_mode", "short"),
   });
 
   const navigate = useCallback((screen, params) => {

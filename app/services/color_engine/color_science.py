@@ -266,8 +266,8 @@ def _fashion_color_name(h: float, s: float, l: float) -> str | None:
     # Navy blue
     if 220 <= h <= 250 and l < 0.30 and s > 0.30:
         return "navy"
-    # Burgundy / maroon
-    if (h <= 10 or h >= 345) and l < 0.30 and s > 0.25:
+    # Burgundy — very dark wine red, tight hue range (h ≤ 8 or h ≥ 348)
+    if (h <= 8 or h >= 348) and l < 0.30 and s > 0.25:
         return "burgundy"
     # Olive
     if 70 <= h <= 100 and 0.15 < s < 0.55 and 0.25 < l < 0.50:
@@ -281,11 +281,11 @@ def _fashion_color_name(h: float, s: float, l: float) -> str | None:
     # Tan
     if 25 <= h <= 45 and 0.20 < s < 0.55 and 0.45 < l < 0.65:
         return "tan"
-    # Coral
-    if 5 <= h <= 25 and s > 0.50 and 0.55 < l < 0.75:
+    # Coral — vivid, higher saturation (s > 0.60 avoids overlap with salmon)
+    if 5 <= h <= 25 and s > 0.60 and 0.55 < l < 0.75:
         return "coral"
-    # Salmon
-    if 5 <= h <= 20 and 0.35 < s < 0.65 and 0.60 < l < 0.80:
+    # Salmon — softer, lower saturation (s ≤ 0.60 ensures no overlap with coral)
+    if 5 <= h <= 20 and 0.35 < s <= 0.60 and 0.60 < l < 0.80:
         return "salmon"
     # Lavender
     if 260 <= h <= 290 and s < 0.45 and l > 0.65:
@@ -317,8 +317,8 @@ def _fashion_color_name(h: float, s: float, l: float) -> str | None:
     # Peach
     if 20 <= h <= 35 and 0.30 < s < 0.65 and 0.70 < l < 0.90:
         return "peach"
-    # Maroon
-    if (h <= 15 or h >= 340) and 0.15 < l < 0.25 and s > 0.30:
+    # Maroon — dark brownish red; hue range excludes the burgundy zone above
+    if (8 < h <= 15 or 340 <= h < 348) and 0.15 < l < 0.30 and s > 0.25:
         return "maroon"
     # Gold
     if 42 <= h <= 52 and s > 0.65 and 0.45 < l < 0.65:

@@ -1,7 +1,11 @@
+import logging
 import os
+
 from dotenv import load_dotenv
 
 load_dotenv()
+
+_logger = logging.getLogger(__name__)
 
 
 class Settings:
@@ -39,3 +43,9 @@ class Settings:
 
 
 settings = Settings()
+
+if not settings.GEMINI_API_KEY:
+    _logger.error(
+        "GEMINI_API_KEY is not configured — all LLM analysis calls will fail. "
+        "Set GEMINI_API_KEY in your .env file before starting the server."
+    )

@@ -219,32 +219,44 @@ Based on the image and the pre-computed data above, provide your structured feed
         temperature=0.2,
     )
 
+    contents = [
+        types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
+        user_prompt,
+    ]
+
     # First attempt
     response = None
     try:
         response = client.models.generate_content(
             model=settings.GEMINI_MODEL,
-            contents=[
-                types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
-                user_prompt,
-            ],
+            contents=contents,
             config=config,
         )
         feedback = _parse_llm_json(response.text)
         return _validate_feedback(feedback)
     except json.JSONDecodeError:
+        # Malformed JSON only — retry with a repair prompt that includes the original context
         logger.warning("First LLM call returned malformed JSON, retrying with repair prompt")
-        raw_response = response.text if response else "empty response"
+        raw_response = response.text
     except Exception as e:
-        logger.error(f"First LLM call failed: {e}")
-        raw_response = str(e)
+        # Network / quota / auth errors — no point retrying with a different prompt
+        logger.error(f"LLM call failed: {e}")
+        raise ImageQualityError(
+            error_code="llm_parse_failed",
+            user_message="Something went wrong generating your feedback. Please try again.",
+        )
 
-    # Retry with repair prompt
+    # Repair attempt — only reached on json.JSONDecodeError.
+    # Re-send the image + color context so the model has full information.
     try:
         repair_msg = REPAIR_PROMPT.format(raw_response=raw_response)
+        repair_contents = [
+            types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
+            f"{repair_msg}\n\n{color_context}",
+        ]
         response = client.models.generate_content(
             model=settings.GEMINI_MODEL,
-            contents=repair_msg,
+            contents=repair_contents,
             config=types.GenerateContentConfig(max_output_tokens=900, temperature=0.1),
         )
         feedback = _parse_llm_json(response.text)

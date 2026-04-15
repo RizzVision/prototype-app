@@ -53,6 +53,12 @@ export default function useVoiceInput({ onResult, continuous = true, lang = "en-
         setSupported(false);
         return;
       }
+      // Hardware/network errors: stop retrying to avoid infinite restart loops
+      if (event.error === "audio-capture" || event.error === "network") {
+        if (recognitionRef.current) recognitionRef.current._shouldListen = false;
+        setIsListening(false);
+        return;
+      }
       console.warn("Speech recognition error:", event.error);
     };
 
@@ -84,7 +90,10 @@ export default function useVoiceInput({ onResult, continuous = true, lang = "en-
       recognitionRef.current.start();
       setIsListening(true);
       playMicOn();
-    } catch {}
+    } catch {
+      // start() failed (e.g. already running) — reset flag so onend doesn't loop
+      recognitionRef.current._shouldListen = false;
+    }
   }, []);
 
   const stopListening = useCallback(() => {

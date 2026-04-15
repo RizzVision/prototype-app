@@ -41,6 +41,8 @@ export class ImageQualityError extends Error {
  * Analyze an outfit image with the full RizzVision pipeline.
  *
  * @param {string} base64 Raw base64 image string (no "data:image/..." prefix).
+ * @param {object} [options]
+ * @param {AbortSignal} [options.signal] Optional signal to cancel the request.
  * @returns {Promise<AnalysisResult>} Full analysis including speech_segments,
  *   color_score, color_label, best_occasion, style_archetype, raw engine data.
  *
@@ -48,18 +50,30 @@ export class ImageQualityError extends Error {
  *   Use .userMessage for a spoken sentence ready for TTS.
  * @throws {Error} For network errors or unexpected server failures.
  */
-export async function analyzeOutfit(base64) {
+export async function analyzeOutfit(base64, { signal } = {}) {
   const blob = base64ToBlob(base64);
   const formData = new FormData();
   formData.append("image", blob, "outfit.jpg");
+
+  // Combine caller signal with a 60 s timeout — ML pipeline can be slow on cold start
+  const timeout = AbortSignal.timeout(60_000);
+  const combinedSignal = signal
+    ? AbortSignal.any([signal, timeout])
+    : timeout;
 
   let res;
   try {
     res = await fetch(`${BASE_URL}/analyze`, {
       method: "POST",
       body: formData,
+      signal: combinedSignal,
     });
   } catch (networkErr) {
+    if (networkErr.name === "AbortError" || networkErr.name === "TimeoutError") {
+      throw new Error(
+        "Analysis is taking too long. Please check your connection and try again."
+      );
+    }
     throw new Error(
       "Could not reach the analysis server. Please check your connection and try again."
     );
@@ -98,9 +112,11 @@ export async function analyzeOutfit(base64) {
  *
  * @param {string} base64 Raw base64 image string.
  * @param {Array}  wardrobeItems Array of wardrobe item objects (may be empty).
+ * @param {object} [options]
+ * @param {AbortSignal} [options.signal] Optional signal to cancel the request.
  * @returns {Promise<ShoppingAnalysisResult>}
  */
-export async function analyzeForShopping(base64, wardrobeItems = []) {
+export async function analyzeForShopping(base64, wardrobeItems = [], { signal } = {}) {
   const blob = base64ToBlob(base64);
   const formData = new FormData();
   formData.append("image", blob, "outfit.jpg");
@@ -113,13 +129,20 @@ export async function analyzeForShopping(base64, wardrobeItems = []) {
     : "";
   formData.append("wardrobe", wardrobeSummary);
 
+  const timeout = AbortSignal.timeout(60_000);
+  const combinedSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
+
   let res;
   try {
     res = await fetch(`${BASE_URL}/shopping-analyze`, {
       method: "POST",
       body: formData,
+      signal: combinedSignal,
     });
-  } catch {
+  } catch (networkErr) {
+    if (networkErr.name === "AbortError" || networkErr.name === "TimeoutError") {
+      throw new Error("Analysis is taking too long. Please check your connection and try again.");
+    }
     throw new Error("Could not reach the analysis server. Please check your connection and try again.");
   }
 
