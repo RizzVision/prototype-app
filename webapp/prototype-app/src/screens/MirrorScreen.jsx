@@ -17,6 +17,7 @@ import { useVoice } from "../contexts/VoiceContext";
 import { analyzeOutfit, ImageQualityError } from "../services/rizzVisionApi";
 import { C, FONT } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
+import ContextChat from "../components/ContextChat";
 
 
 export default function MirrorScreen() {
@@ -220,6 +221,10 @@ export default function MirrorScreen() {
   }
 
   // ── Result ─────────────────────────────────────────────────────────────────
+  const mirrorChatContext = result
+    ? (result.speech_segments || []).map((s) => s.text).join("\n")
+    : "";
+
   return (
     <Screen title="Auditory Mirror" subtitle="Instant feedback — not saved to wardrobe.">
       <LiveRegions />
@@ -260,7 +265,17 @@ export default function MirrorScreen() {
         </div>
       )}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {/* Follow-up chatbot — anchored to this mirror result */}
+      {mirrorChatContext && (
+        <ContextChat
+          context={mirrorChatContext}
+          feature="mirror"
+          speak={speak}
+          announce={announce}
+        />
+      )}
+
+      <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 12 }}>
         <BigButton
           label="Short Description"
           hint="Hear a quick summary: what you're wearing and the overall verdict"

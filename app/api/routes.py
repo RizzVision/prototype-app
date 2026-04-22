@@ -261,6 +261,98 @@ async def outfit_suggestion(req: OutfitSuggestionRequest):
     return {"suggestion": response.text}
 
 
+class ContextChatRequest(BaseModel):
+    message: str
+    context: str          # The suggestion/result text the user is asking about
+    feature: str          # Which feature: "scan", "mirror", "outfit", "shopping", "wardrobe"
+    history: list[dict]   # [{"role": "user"|"assistant", "text": str}, ...]
+
+
+@router.post("/context-chat")
+async def context_chat(req: ContextChatRequest):
+    """
+    Feature-specific follow-up chatbot.
+
+    Stays in the context of a particular suggestion/result. The conversation
+    history is passed in full so the LLM has memory of the thread.
+    Each feature has its own persona/framing so answers stay relevant.
+
+    Returns: { answer: str }  — TTS-ready spoken response.
+    """
+    from google import genai
+    from google.genai import types
+    from app.core.config import settings
+
+    feature_personas = {
+        "scan": (
+            "You are RizzVision's outfit analyst. The user has just received a full outfit analysis. "
+            "Answer follow-up questions about the specific outfit described in the context — colours, fit, occasion suitability, what to change, etc. "
+            "Be direct, warm, and specific. Reference the actual garments and details from the context."
+        ),
+        "mirror": (
+            "You are RizzVision's auditory mirror. The user received instant outfit feedback. "
+            "Answer follow-up questions about the outfit — how it looks, what to change, specific details. "
+            "Be concise and helpful. Reference the actual analysis from the context."
+        ),
+        "outfit": (
+            "You are RizzVision's personal stylist. The user received outfit combination suggestions from their wardrobe. "
+            "Answer follow-up questions about why these pieces work together, alternatives, how to accessorise, or what else could work. "
+            "Be enthusiastic and specific. Only refer to items that appear in the context."
+        ),
+        "shopping": (
+            "You are RizzVision's shopping assistant. The user is in a store and received feedback on an item they are looking at. "
+            "Answer follow-up questions about the item — fit, value, whether it suits them, what it would pair with. "
+            "Be practical and decisive. Reference the item details from the context."
+        ),
+        "wardrobe": (
+            "You are RizzVision's wardrobe assistant. The user is browsing their saved clothing items. "
+            "Answer questions about specific items, combinations, or general wardrobe advice. "
+            "Be helpful and organised. Reference the actual items listed in the context."
+        ),
+    }
+
+    persona = feature_personas.get(req.feature, feature_personas["scan"])
+
+    # Build conversation history for the LLM
+    history_text = ""
+    for turn in req.history[-6:]:  # last 6 turns keeps context tight
+        role = "User" if turn["role"] == "user" else "Assistant"
+        history_text += f"{role}: {turn['text']}\n"
+
+    prompt = f"""{persona}
+
+CONTEXT (what was shown to the user):
+{req.context}
+
+CONVERSATION SO FAR:
+{history_text}
+User: {req.message}
+
+RULES:
+- Your response will be read aloud. Keep every sentence under 15 words.
+- No markdown. No bullet points. Speak naturally.
+- Be specific — reference actual items, colours, and details from the context above.
+- If the user asks about something not in the context, say so honestly.
+- Keep your total response under 60 words.
+
+Respond as the Assistant:"""
+
+    try:
+        client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        response = client.models.generate_content(
+            model=settings.GEMINI_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(max_output_tokens=200, temperature=0.5),
+        )
+        answer = response.text.strip()
+        # Strip any "Assistant:" prefix the model might echo
+        if answer.lower().startswith("assistant:"):
+            answer = answer[10:].strip()
+        return {"answer": answer}
+    except Exception:
+        return {"answer": "I could not process that question. Please try again."}
+
+
 class VoiceQueryRequest(BaseModel):
     transcript: str
     current_screen: str = "home"

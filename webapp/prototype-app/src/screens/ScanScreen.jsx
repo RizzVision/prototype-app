@@ -23,6 +23,7 @@ import { analyzeOutfit, ImageQualityError } from "../services/rizzVisionApi";
 import { SCREENS, OCCASIONS, C, FONT } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
 import ChoiceList from "../components/ChoiceList";
+import ContextChat from "../components/ContextChat";
 
 
 function hexDistance(a, b) {
@@ -642,6 +643,13 @@ export default function ScanScreen() {
   const occasionLabel = OCCASIONS.find(o => o.id === selectedOccasion)?.label || "";
   const occasionVerdict = result?.occasion_verdict || "";
 
+  // Build a plain-text context string for the follow-up chatbot
+  const scanChatContext = result ? [
+    occasionLabel && `Occasion: ${occasionLabel}`,
+    ...(result.speech_segments || []).map((s) => s.text),
+    occasionVerdict && `Occasion verdict: ${occasionVerdict}`,
+  ].filter(Boolean).join("\n") : "";
+
   return (
     <Screen title="Outfit Analysis" subtitle={occasionLabel || "Analysis complete"}>
       <LiveRegions />
@@ -698,7 +706,17 @@ export default function ScanScreen() {
         </div>
       )}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {/* Follow-up chatbot — anchored to this scan result */}
+      {scanChatContext && (
+        <ContextChat
+          context={scanChatContext}
+          feature="scan"
+          speak={speak}
+          announce={announce}
+        />
+      )}
+
+      <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 12 }}>
         <BigButton
           label="Short Description"
           hint="Hear a quick summary: what you're wearing, the verdict, and whether it works for your occasion"

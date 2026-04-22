@@ -2,8 +2,10 @@ import { useState, useEffect, useCallback } from "react";
 import Screen from "../components/Screen";
 import BigButton from "../components/BigButton";
 import WardrobeCard from "../components/WardrobeCard";
+import ContextChat from "../components/ContextChat";
 import { useWardrobe } from "../contexts/WardrobeContext";
 import { useVoice } from "../contexts/VoiceContext";
+import { useAnnounce } from "../components/LiveRegions";
 import { useApp } from "../contexts/AppContext";
 import { SCREENS, C, FONT, CATEGORIES } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
@@ -11,8 +13,10 @@ import { RESPONSES } from "../voice/voiceResponses";
 export default function WardrobeScreen() {
   const { items, loading, removeItem, removeLast } = useWardrobe();
   const { speak } = useVoice();
+  const { announce, LiveRegions } = useAnnounce();
   const { navigate } = useApp();
   const [filter, setFilter] = useState(null);
+  const [chatItem, setChatItem] = useState(null); // item currently being chatted about
 
   const filtered = filter ? items.filter(i => i.category === filter) : items;
 
@@ -36,7 +40,9 @@ export default function WardrobeScreen() {
   }, [filtered, speak]);
 
   const handleTap = useCallback((item) => {
-    speak(item.description || `${item.name}. ${item.color} ${item.pattern || ""} ${item.type || item.category}.`);
+    const desc = item.description || `${item.name}. ${item.color} ${item.pattern || ""} ${item.type || item.category}.`;
+    speak(desc);
+    setChatItem(item);
   }, [speak]);
 
   const handleDelete = useCallback((id) => {
@@ -95,11 +101,25 @@ export default function WardrobeScreen() {
     );
   }
 
+  // Build wardrobe context string for the chatbot (all items listed)
+  const wardrobeChatContext = items.length
+    ? items.map((item) =>
+        `- ${item.name} (${item.category})${item.description ? ": " + item.description : ""}`
+      ).join("\n")
+    : "Wardrobe is empty.";
+
+  // If user tapped a specific item, focus the chat on that item
+  const activeChatContext = chatItem
+    ? `Item tapped: ${chatItem.name} (${chatItem.category})\n${chatItem.description || ""}\n\nFull wardrobe:\n${wardrobeChatContext}`
+    : wardrobeChatContext;
+
   return (
     <Screen
       title="My Wardrobe"
       subtitle={`${filtered.length} item${filtered.length !== 1 ? "s" : ""}${filter ? ` in ${filter}` : ""}`}
     >
+      <LiveRegions />
+
       {/* Filter chips */}
       <div style={{
         display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap",
@@ -137,6 +157,14 @@ export default function WardrobeScreen() {
           />
         ))}
       </div>
+
+      {/* Wardrobe chatbot — tap an item first to focus questions on it */}
+      <ContextChat
+        context={activeChatContext}
+        feature="wardrobe"
+        speak={speak}
+        announce={announce}
+      />
     </Screen>
   );
 }

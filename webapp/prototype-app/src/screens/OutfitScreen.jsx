@@ -2,8 +2,10 @@ import { useState, useEffect, useCallback } from "react";
 import Screen from "../components/Screen";
 import BigButton from "../components/BigButton";
 import ChoiceList from "../components/ChoiceList";
+import ContextChat from "../components/ContextChat";
 import { useApp } from "../contexts/AppContext";
 import { useVoice } from "../contexts/VoiceContext";
+import { useAnnounce } from "../components/LiveRegions";
 import { useWardrobe } from "../contexts/WardrobeContext";
 import { getOutfitSuggestion } from "../services/outfitRecommendation";
 import { OCCASIONS, SCREENS, C, FONT } from "../utils/constants";
@@ -12,6 +14,7 @@ import { RESPONSES } from "../voice/voiceResponses";
 export default function OutfitScreen() {
   const { navParams, navigate } = useApp();
   const { speak } = useVoice();
+  const { announce, LiveRegions } = useAnnounce();
   const { items } = useWardrobe();
   const [phase, setPhase] = useState("occasion"); // occasion | loading | result
   const [occasion, setOccasion] = useState(null);
@@ -135,14 +138,19 @@ export default function OutfitScreen() {
 
   // Result phase
   const occasionLabel = OCCASIONS.find(o => o.id === occasion)?.label || occasion;
+  const outfitChatContext = result
+    ? `Occasion: ${occasionLabel}\nOutfit suggestion: ${result}`
+    : "";
+
   return (
     <Screen title="Your Outfit" subtitle={`For ${occasionLabel}`}>
+      <LiveRegions />
       <div
         role="region"
         aria-label="Outfit suggestion"
         style={{
           background: C.surface, borderRadius: 16, padding: 20,
-          border: `1px solid ${C.border}`, marginBottom: 20,
+          border: `1px solid ${C.border}`, marginBottom: 16,
         }}
       >
         <p style={{
@@ -150,7 +158,17 @@ export default function OutfitScreen() {
         }}>{result}</p>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {/* Follow-up chatbot — anchored to this outfit suggestion */}
+      {outfitChatContext && (
+        <ContextChat
+          context={outfitChatContext}
+          feature="outfit"
+          speak={speak}
+          announce={announce}
+        />
+      )}
+
+      <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 12 }}>
         <BigButton
           label="Read Again"
           hint="Hear the outfit suggestion again"

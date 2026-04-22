@@ -162,6 +162,29 @@ export async function askShoppingFollowUp(question, lastAnalysisContext) {
 }
 
 /**
+ * Feature-specific context chatbot — follow-up Q&A about a shown suggestion/result.
+ *
+ * @param {string} message   The user's question (text or voice transcript).
+ * @param {string} context   The suggestion/result text shown to the user.
+ * @param {string} feature   Which feature: "scan"|"mirror"|"outfit"|"shopping"|"wardrobe"
+ * @param {Array}  history   Prior turns: [{role:"user"|"assistant", text:string}]
+ * @returns {Promise<{answer: string}>}
+ */
+export async function askContextChat(message, context, feature, history = []) {
+  try {
+    const res = await fetch(`${BASE_URL}/context-chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, context, feature, history }),
+    });
+    if (!res.ok) throw new Error(`context-chat failed (${res.status})`);
+    return await res.json();
+  } catch {
+    return { answer: "I could not reach the server. Please check your connection." };
+  }
+}
+
+/**
  * Quick health check — returns true if the backend is reachable.
  */
 export async function pingBackend() {
