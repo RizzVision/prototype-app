@@ -67,6 +67,7 @@ async def analyze_outfit(
     return {
         "speech_segments": speech_segments,
         "occasion_verdict": llm_feedback.get("occasion_verdict", ""),
+        "wardrobe_description": llm_feedback.get("wardrobe_description", ""),
         "skin_detected": False,
         "latency_ms": latency_ms,
     }

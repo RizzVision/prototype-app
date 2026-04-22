@@ -38,6 +38,7 @@ RULES:
 13. For occasion_verdict: the user has told you what occasion they are dressing for. Judge ONLY whether this specific outfit works for that occasion. Be funny, warm, and hype them up if it works. If it does not work, be gently humorous like a supportive friend, not a critic. Always end with a concrete fix if it does not work. Use one of these tones as inspiration (do not copy verbatim):
     WORKS examples: "Absolutely sending it. This is giving exactly the right energy for [occasion]."  /  "Certified [occasion] outfit. Nobody is ready for you."  /  "This is a full yes. Go do wonders."  /  "The [occasion] does not know what is about to hit it."  /  "Cleared for [occasion]. You are good to go, no notes."
     DOES NOT WORK examples: "Okay bestie, love the energy, but [occasion] is calling for something different. Swap [specific item] for something more [direction]."  /  "This is a vibe, just not the [occasion] vibe. [Specific fix] and you are sorted."  /  "Bold choice for [occasion]. Respectfully, [specific item] needs to sit this one out. Try [fix]."  /  "Not quite [occasion]-coded. [Specific change] and we are back in business."  /  "The outfit said yes but [occasion] said not today. [Concrete fix]."
+14. For wardrobe_description: Write a rich, precise 3-4 sentence description of the SINGLE main garment for saving to the user's wardrobe. This description will be used later to visually re-identify the item from a photo. Include: exact garment type, exact colour name (not hex), pattern or texture if visible, fabric weight impression, fit (loose/slim/oversized/fitted), neckline and sleeve details, any distinctive features (logo, pocket, buttons, embroidery, print). Write as complete sentences. Do not mention the occasion.
 
 Return ONLY valid JSON. No markdown. No preamble. No explanation outside the JSON.
 
@@ -48,7 +49,8 @@ Output schema:
   "fit_feedback": "string",
   "overall_verdict": "string",
   "top_fix": "string",
-  "occasion_verdict": "string"
+  "occasion_verdict": "string",
+  "wardrobe_description": "string"
 }
 
 Field guidance:
@@ -57,7 +59,8 @@ Field guidance:
 - fit_feedback: Assess proportion and silhouette only. No occasion prediction.
 - overall_verdict: One sentence. Honest. Not cruel. Not false.
 - top_fix: The single most impactful change the user can make right now.
-- occasion_verdict: One to two sentences. Funny and warm if it works. Gently humorous with a concrete fix if it does not. Always references the specific occasion the user chose."""
+- occasion_verdict: One to two sentences. Funny and warm if it works. Gently humorous with a concrete fix if it does not. Always references the specific occasion the user chose.
+- wardrobe_description: 3-4 sentences describing the single main garment for wardrobe identification. Include type, exact colour, pattern/texture, fabric impression, fit, neckline, sleeves, and any distinctive features."""
 
 REPAIR_PROMPT = """The previous response was not valid JSON. Here is the raw response:
 
@@ -70,7 +73,8 @@ Please return ONLY valid JSON matching this exact schema, nothing else:
   "fit_feedback": "string",
   "overall_verdict": "string",
   "top_fix": "string",
-  "occasion_verdict": "string"
+  "occasion_verdict": "string",
+  "wardrobe_description": "string"
 }}"""
 
 _client = None
@@ -100,6 +104,7 @@ def _validate_feedback(data: dict) -> dict:
         "overall_verdict": "I was unable to fully assess this outfit.",
         "top_fix": "Try taking a clearer photo for better feedback.",
         "occasion_verdict": "",
+        "wardrobe_description": "",
     }
     for field_name, default in required_fields.items():
         if field_name not in data or not data[field_name]:

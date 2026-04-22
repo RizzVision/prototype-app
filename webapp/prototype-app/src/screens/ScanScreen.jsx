@@ -187,26 +187,25 @@ export default function ScanScreen() {
 
     const names = namesOverride ?? customNames;
 
-    // Build a rich 1-2 line description for the single garment from the analysis segments.
-    // garments segment = what it is; color_feedback = how it reads on skin; fit_feedback = silhouette/occasion.
-    // We compose: "[garments text]. [color_feedback first sentence]. [fit_feedback first sentence]."
-    const segMap = {};
-    for (const seg of result.speech_segments || []) segMap[seg.id] = seg.text;
+    // Use the LLM-generated wardrobe_description if present — it's a 3-4 sentence
+    // identification-optimised description (type, exact colour, texture, fit, distinctive features).
+    // Fall back to stitching TTS segments only if the field is missing (old API responses).
+    let richDescription = result.wardrobe_description?.trim() || "";
 
-    function firstSentence(text) {
-      if (!text) return "";
-      const m = text.match(/[^.!?]+[.!?]/);
-      return m ? m[0].trim() : text.split(" ").slice(0, 18).join(" ");
+    if (!richDescription) {
+      const segMap = {};
+      for (const seg of result.speech_segments || []) segMap[seg.id] = seg.text;
+      function firstSentence(text) {
+        if (!text) return "";
+        const m = text.match(/[^.!?]+[.!?]/);
+        return m ? m[0].trim() : text.split(" ").slice(0, 18).join(" ");
+      }
+      richDescription = [
+        segMap["garments"] || "",
+        firstSentence(segMap["color_feedback"] || ""),
+        firstSentence(segMap["fit_feedback"] || ""),
+      ].filter(Boolean).join(" ").replace(/\s{2,}/g, " ").trim();
     }
-
-    const garmentLine = segMap["garments"] || "";
-    const colorLine = firstSentence(segMap["color_feedback"] || "");
-    const fitLine = firstSentence(segMap["fit_feedback"] || "");
-    const richDescription = [garmentLine, colorLine, fitLine]
-      .filter(Boolean)
-      .join(" ")
-      .replace(/\s{2,}/g, " ")
-      .trim();
 
     const garments = result.raw?.garment_details || [];
     const g = garments[0]; // always single garment at this point
