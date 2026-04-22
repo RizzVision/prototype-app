@@ -259,3 +259,127 @@ async def outfit_suggestion(req: OutfitSuggestionRequest):
         config=types.GenerateContentConfig(max_output_tokens=250, temperature=0.7),
     )
     return {"suggestion": response.text}
+
+
+class VoiceQueryRequest(BaseModel):
+    transcript: str
+    current_screen: str = "home"
+    wardrobe_summary: str = ""   # Plain text list of wardrobe items (may be empty)
+    wardrobe_count: int = 0
+
+
+@router.post("/voice-query")
+async def voice_query(req: VoiceQueryRequest):
+    """
+    Free-form voice assistant endpoint.
+
+    Receives a transcript of what the user said plus app context, and returns
+    either a spoken answer or a structured command (or both) for the frontend to act on.
+
+    The LLM decides whether the query is:
+      - A question to answer (e.g. "how many items do I have?")
+      - A navigation intent (e.g. "I want to check my wardrobe")
+      - A feature question (e.g. "what can you do?")
+      - An action on the current screen (e.g. "save this" on result screen)
+
+    Returns:
+        answer   — TTS-ready spoken response (always present)
+        command  — Optional structured command for the frontend to execute
+                   { type, screen?, id?, category? } — same shape as commandParser output
+    """
+    from google import genai
+    from google.genai import types
+    from app.core.config import settings
+
+    client = genai.Client(api_key=settings.GEMINI_API_KEY)
+
+    screen_descriptions = {
+        "home":      "the main menu with buttons for Scan Clothing, Get Outfit Help, My Wardrobe, Shopping Mode, and Mirror",
+        "scan":      "the Scan Clothing screen — captures outfit photos, analyses them, and saves items to the wardrobe",
+        "wardrobe":  "the Wardrobe screen showing the user's saved clothing items",
+        "outfit":    "the Outfit Help screen where the user picks an occasion to get outfit combination suggestions",
+        "shopping":  "Shopping Mode — the camera auto-captures every few seconds for real-time wardrobe-aware feedback",
+        "mirror":    "the Auditory Mirror — instant outfit feedback, nothing is saved",
+        "editItem":  "the Edit Item screen for changing the name, category or description of a wardrobe item",
+    }
+    screen_label = screen_descriptions.get(req.current_screen, req.current_screen)
+
+    wardrobe_section = (
+        f"The user's wardrobe ({req.wardrobe_count} item{'s' if req.wardrobe_count != 1 else ''}):\n{req.wardrobe_summary}"
+        if req.wardrobe_summary
+        else "The user's wardrobe is currently empty."
+    )
+
+    prompt = f"""You are RizzVision, an AI fashion assistant for visually impaired users.
+The user has just spoken to you. Respond as if you are a helpful, warm, knowledgeable friend.
+Your answer WILL BE READ ALOUD — keep every sentence under 15 words. No markdown. No lists. Speak naturally.
+
+APP CONTEXT
+-----------
+Current screen: {screen_label}
+{wardrobe_section}
+
+WHAT RizzVision CAN DO (use this to answer "what can you do" questions):
+- Scan Clothing: photograph a clothing item, analyse it with AI, and save it to your wardrobe with a name and description
+- Auditory Mirror: instantly hear what you are wearing right now — colours, fit, and a one-liner verdict — nothing is saved
+- Shopping Mode: point the camera while shopping and hear real-time feedback on whether items match your wardrobe
+- Get Outfit Help: say an occasion and hear which exact items from your wardrobe to combine
+- My Wardrobe: browse, filter by category, or delete saved items
+- Voice commands: say any instruction aloud — navigate, filter, save, read results, and more
+
+USER SAID: "{req.transcript}"
+
+INSTRUCTIONS:
+1. Answer the question or respond to the request naturally and helpfully.
+2. If the user wants to navigate somewhere, include a "command" field in your JSON.
+3. Keep the spoken answer under 40 words total — TTS is slow, brevity is kind.
+4. If you do not understand, say so clearly and suggest what the user can try.
+
+Return ONLY valid JSON:
+{{
+  "answer": "spoken response here",
+  "command": null
+}}
+
+OR if navigation/action is appropriate:
+{{
+  "answer": "spoken response here",
+  "command": {{ "type": "NAVIGATE", "screen": "wardrobe" }}
+}}
+
+Valid command types and shapes:
+  {{"type": "NAVIGATE", "screen": "<home|scan|wardrobe|outfit|shopping|mirror>"}}
+  {{"type": "GO_BACK"}}
+  {{"type": "READ_WARDROBE"}}
+  {{"type": "FILTER_WARDROBE", "category": "<tops|bottoms|dresses|footwear|jewellery|null>"}}
+  {{"type": "READ_RESULT"}}
+  {{"type": "SAVE_ITEM"}}
+  {{"type": "DISCARD_ITEM"}}
+  {{"type": "SCAN_AGAIN"}}
+  {{"type": "PAUSE_SCAN"}}
+  {{"type": "RESUME_SCAN"}}
+  {{"type": "CONFIRM"}}
+
+Only include a command when the user clearly wants an action, not just information."""
+
+    import json as _json
+
+    try:
+        response = client.models.generate_content(
+            model=settings.GEMINI_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(max_output_tokens=300, temperature=0.5),
+        )
+        text = response.text.strip()
+        if text.startswith("```"):
+            text = "\n".join(l for l in text.split("\n") if not l.strip().startswith("```"))
+        data = _json.loads(text)
+        return {
+            "answer": data.get("answer", "I did not quite catch that. Could you rephrase?"),
+            "command": data.get("command"),
+        }
+    except Exception:
+        return {
+            "answer": "I did not quite catch that. Try saying a command like 'my wardrobe' or 'scan clothing'.",
+            "command": None,
+        }

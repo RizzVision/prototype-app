@@ -11,7 +11,7 @@ import { RESPONSES } from "../voice/voiceResponses";
 export default function HomeScreen() {
   const { navigate } = useApp();
   const { signOut } = useAuth();
-  const { speak, isListening, toggleListening } = useVoice();
+  const { speak, isListening, isThinking, toggleListening } = useVoice();
 
   useEffect(() => {
     const timer = setTimeout(() => speak(RESPONSES.welcome), 500);
@@ -19,7 +19,7 @@ export default function HomeScreen() {
   }, [speak]);
 
   useEffect(() => {
-    if (isListening) speak("Try: scan clothing to save items, mirror to check today's outfit, my wardrobe, outfit help, or shopping mode.");
+    if (isListening) speak("I'm listening. You can say a command or ask me anything — like how many items are in my wardrobe, or what can you do.");
   }, [isListening, speak]);
 
   return (
@@ -40,7 +40,7 @@ export default function HomeScreen() {
           aria-atomic="true"
           style={{ fontSize: 14, color: "#888", textAlign: "center", marginBottom: 8 }}
         >
-          {isListening ? "Listening — say a command" : "Tap to start listening"}
+          {isThinking ? "Thinking..." : isListening ? "Listening — say anything" : "Tap to start listening"}
         </div>
 
         <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 14 }}>

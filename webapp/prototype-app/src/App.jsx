@@ -43,8 +43,8 @@ function ScreenRouter() {
 }
 
 function StatusIndicator() {
-  const { isListening, isSpeaking } = useVoice();
-  return <VoiceStatus isListening={isListening} isSpeaking={isSpeaking} />;
+  const { isListening, isSpeaking, isThinking } = useVoice();
+  return <VoiceStatus isListening={isListening} isSpeaking={isSpeaking} isThinking={isThinking} />;
 }
 
 function BackButton() {
