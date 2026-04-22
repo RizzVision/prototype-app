@@ -185,6 +185,40 @@ export async function askContextChat(message, context, feature, history = []) {
 }
 
 /**
+ * Identify a photographed garment against the user's saved wardrobe.
+ *
+ * @param {string} base64        Raw base64 image (no data URL prefix).
+ * @param {Array}  wardrobeItems Array of wardrobe item objects.
+ * @returns {Promise<{matched_id, matched_name, confidence, spoken}>}
+ */
+export async function identifyWardrobeItem(base64, wardrobeItems = []) {
+  const wardrobe = wardrobeItems.map((item) => ({
+    id: item.id,
+    name: item.name,
+    category: item.category || "",
+    colorDescription: item.colorDescription || item.color_description || "",
+    description: item.description || "",
+  }));
+
+  try {
+    const res = await fetch(`${BASE_URL}/identify-item`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image_base64: base64, wardrobe }),
+    });
+    if (!res.ok) throw new Error(`identify-item failed (${res.status})`);
+    return await res.json();
+  } catch {
+    return {
+      matched_id: null,
+      matched_name: null,
+      confidence: "none",
+      spoken: "Could not reach the server. Please check your connection.",
+    };
+  }
+}
+
+/**
  * Quick health check — returns true if the backend is reachable.
  */
 export async function pingBackend() {

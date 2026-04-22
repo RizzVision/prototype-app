@@ -353,6 +353,129 @@ Respond as the Assistant:"""
         return {"answer": "I could not process that question. Please try again."}
 
 
+class IdentifyItemRequest(BaseModel):
+    image_base64: str       # base64-encoded JPEG (no data URL prefix)
+    wardrobe: list[dict]    # [{id, name, category, colorDescription, description}, ...]
+
+
+@router.post("/identify-item")
+async def identify_item(req: IdentifyItemRequest):
+    """
+    Match a photographed garment against the user's saved wardrobe items.
+
+    Sends the image and full wardrobe descriptions to the LLM, which selects
+    the best match (or says none found). Returns the matched item's id,
+    a confidence label, and a spoken explanation.
+
+    Returns:
+        matched_id     — id of the matched wardrobe item, or null
+        matched_name   — display name of the matched item, or null
+        confidence     — "high" | "medium" | "low" | "none"
+        spoken         — TTS-ready sentence explaining the match
+    """
+    import base64 as _b64
+    import json as _json
+    from google import genai
+    from google.genai import types as gtypes
+    from app.core.config import settings
+
+    if not req.wardrobe:
+        return {
+            "matched_id": None,
+            "matched_name": None,
+            "confidence": "none",
+            "spoken": "Your wardrobe is empty. Scan some clothing items first.",
+        }
+
+    # Decode image
+    try:
+        img_bytes = _b64.b64decode(req.image_base64)
+        from PIL import Image
+        import io as _io
+        img = Image.open(_io.BytesIO(img_bytes)).convert("RGB")
+        # Downscale for speed — identify doesn't need full res
+        img.thumbnail((640, 640))
+        buf = _io.BytesIO()
+        img.save(buf, format="JPEG", quality=80)
+        img_bytes = buf.getvalue()
+    except Exception:
+        return {
+            "matched_id": None,
+            "matched_name": None,
+            "confidence": "none",
+            "spoken": "Could not read the image. Please try again.",
+        }
+
+    # Build wardrobe list for the prompt
+    wardrobe_lines = "\n".join(
+        f"{i+1}. [ID:{item['id']}] {item['name']} ({item.get('colorDescription') or ''}) "
+        f"— {item.get('category', '')}. {item.get('description') or ''}"
+        for i, item in enumerate(req.wardrobe)
+    )
+
+    prompt = f"""You are RizzVision's clothing identifier. A visually impaired user is holding up a garment.
+Your job: look at the photo and find which item in their wardrobe it most likely is.
+
+WARDROBE:
+{wardrobe_lines}
+
+TASK:
+1. Describe what garment you see in one short phrase (colour + type).
+2. Pick the single best matching wardrobe item based on colour, type, and any visible details.
+3. Rate your confidence: "high" if the match is clear, "medium" if likely but not certain, "low" if it is a guess.
+4. If nothing in the wardrobe matches at all (very different garment), use confidence "none".
+
+RULES:
+- Your spoken sentence will be read aloud. Keep it under 20 words.
+- Do not mention the ID in the spoken text — only in the JSON.
+- If confidence is "none", set matched_id to null.
+
+Return ONLY valid JSON:
+{{
+  "matched_id": "<id string or null>",
+  "matched_name": "<item name or null>",
+  "confidence": "high|medium|low|none",
+  "spoken": "spoken sentence here"
+}}"""
+
+    try:
+        client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        response = client.models.generate_content(
+            model=settings.GEMINI_MODEL,
+            contents=[
+                gtypes.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
+                prompt,
+            ],
+            config=gtypes.GenerateContentConfig(max_output_tokens=300, temperature=0.3),
+        )
+        text = response.text.strip()
+        if text.startswith("```"):
+            text = "\n".join(l for l in text.split("\n") if not l.strip().startswith("```"))
+        data = _json.loads(text)
+
+        # Validate matched_id is actually in the wardrobe
+        valid_ids = {item["id"] for item in req.wardrobe}
+        if data.get("matched_id") and data["matched_id"] not in valid_ids:
+            data["matched_id"] = None
+            data["matched_name"] = None
+            data["confidence"] = "none"
+            data["spoken"] = "I could not find a matching item in your wardrobe."
+
+        return {
+            "matched_id": data.get("matched_id"),
+            "matched_name": data.get("matched_name"),
+            "confidence": data.get("confidence", "none"),
+            "spoken": data.get("spoken", "I was not able to identify this item."),
+        }
+    except Exception:
+        return {
+            "matched_id": None,
+            "matched_name": None,
+            "confidence": "none",
+            "spoken": "Something went wrong. Please try again.",
+        }
+
+
 class VoiceQueryRequest(BaseModel):
     transcript: str
     current_screen: str = "home"

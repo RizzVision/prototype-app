@@ -15,6 +15,7 @@ import OutfitScreen from "./screens/OutfitScreen";
 import ShoppingScreen from "./screens/ShoppingScreen";
 import MirrorScreen from "./screens/MirrorScreen";
 import EditItemScreen from "./screens/EditItemScreen";
+import IdentifyScreen from "./screens/IdentifyScreen";
 import { SCREENS, C, FONT } from "./utils/constants";
 
 const SCREEN_TITLES = {
@@ -25,6 +26,7 @@ const SCREEN_TITLES = {
   [SCREENS.SHOPPING]:  "Shopping Mode",
   [SCREENS.MIRROR]:    "Mirror",
   [SCREENS.EDIT_ITEM]: "Edit Item",
+  [SCREENS.IDENTIFY]:  "Identify Garment",
 };
 
 function ScreenRouter() {
@@ -38,6 +40,7 @@ function ScreenRouter() {
     case SCREENS.SHOPPING: return <ShoppingScreen />;
     case SCREENS.MIRROR:   return <MirrorScreen />;
     case SCREENS.EDIT_ITEM: return <EditItemScreen />;
+    case SCREENS.IDENTIFY:  return <IdentifyScreen />;
     default:               return <HomeScreen />;
   }
 }
@@ -49,7 +52,7 @@ function StatusIndicator() {
 
 function BackButton() {
   const { screen, canGoBack, goBack } = useApp();
-  const isFullScreen = screen === SCREENS.SCAN || screen === SCREENS.SHOPPING || screen === SCREENS.MIRROR;
+  const isFullScreen = screen === SCREENS.SCAN || screen === SCREENS.SHOPPING || screen === SCREENS.MIRROR || screen === SCREENS.IDENTIFY;
 
   if (!canGoBack) return null;
 

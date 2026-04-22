@@ -142,6 +142,11 @@ export default function OutfitScreen() {
     ? `Occasion: ${occasionLabel}\nOutfit suggestion: ${result}`
     : "";
 
+  // Extract item names mentioned in the suggestion so IdentifyScreen can show them as hints
+  const mentionedItems = items
+    .filter((item) => result && result.toLowerCase().includes(item.name.toLowerCase()))
+    .map((item) => item.name);
+
   return (
     <Screen title="Your Outfit" subtitle={`For ${occasionLabel}`}>
       <LiveRegions />
@@ -174,6 +179,12 @@ export default function OutfitScreen() {
           hint="Hear the outfit suggestion again"
           icon="🔊"
           onClick={() => speak(result)}
+        />
+        <BigButton
+          label="Identify an Item"
+          hint="Point the camera at a garment to find out which saved item it is"
+          icon="🔍"
+          onClick={() => navigate(SCREENS.IDENTIFY, { hintItems: mentionedItems })}
         />
         <BigButton
           label="Try a Different Occasion"

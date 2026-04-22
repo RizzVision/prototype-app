@@ -135,13 +135,19 @@ export default function WardrobeScreen() {
         ))}
       </div>
 
-      {/* Read All button */}
-      <div style={{ marginBottom: 16 }}>
+      {/* Read All + Identify row */}
+      <div style={{ marginBottom: 16, display: "flex", flexDirection: "column", gap: 10 }}>
         <BigButton
           label="Read My Wardrobe"
           hint="Hear all items read aloud"
           icon="🔊"
           onClick={readAll}
+        />
+        <BigButton
+          label="Identify a Garment"
+          hint="Point the camera at any garment to find out which saved item it is"
+          icon="🔍"
+          onClick={() => navigate(SCREENS.IDENTIFY)}
         />
       </div>
 
