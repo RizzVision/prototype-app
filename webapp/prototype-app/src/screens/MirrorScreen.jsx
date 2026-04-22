@@ -49,10 +49,17 @@ export default function MirrorScreen() {
       setResult(analysis);
       setPhase("result");
 
+      // Auto-speak the short description on arrival
       if (analysis.speech_segments?.length) {
-        const fullText = analysis.speech_segments.map((s) => s.text).join("  ");
-        announce(fullText, "polite");
-        speak(fullText);
+        const segMap = {};
+        for (const s of analysis.speech_segments) segMap[s.id] = s.text;
+        const shortParts = [
+          segMap["garments"],
+          segMap["overall_verdict"],
+        ].filter(Boolean);
+        const shortText = shortParts.join("  ");
+        announce(shortText, "polite");
+        speak(shortText);
       }
     } catch (err) {
       const msg =
@@ -74,10 +81,21 @@ export default function MirrorScreen() {
     announce(RESPONSES.mirrorReady, "polite");
   }, [speak, announce]);
 
-  const speakResult = useCallback(() => {
-    if (result?.speech_segments?.length) {
-      speak(result.speech_segments.map((s) => s.text).join("  "));
-    }
+  const speakShort = useCallback(() => {
+    if (!result) return;
+    const segMap = {};
+    for (const s of result.speech_segments || []) segMap[s.id] = s.text;
+    const parts = [
+      segMap["garments"],
+      segMap["overall_verdict"],
+    ].filter(Boolean);
+    if (parts.length) speak(parts.join("  "));
+  }, [result, speak]);
+
+  const speakLong = useCallback(() => {
+    if (!result) return;
+    const parts = (result.speech_segments || []).map((s) => s.text);
+    if (parts.length) speak(parts.join("  "));
   }, [result, speak]);
 
   // Voice command listener — placed after all callbacks to avoid TDZ in prod build
@@ -86,11 +104,11 @@ export default function MirrorScreen() {
       const cmd = e.detail;
       if (cmd.type === "SCAN_AGAIN") reset();
       else if (cmd.type === "SAVE_ITEM") speak("Mirror mode only gives instant feedback. To save items to your wardrobe, go back and use Scan Clothing instead.");
-      else if (cmd.type === "READ_RESULT" && phase === "result") speakResult();
+      else if (cmd.type === "READ_RESULT" && phase === "result") speakLong();
     };
     window.addEventListener("voiceCommand", handler);
     return () => window.removeEventListener("voiceCommand", handler);
-  }, [phase, reset, speak, speakResult]);
+  }, [phase, reset, speak, speakLong]);
 
   // ── Camera ─────────────────────────────────────────────────────────────────
   if (phase === "camera") {
@@ -202,9 +220,6 @@ export default function MirrorScreen() {
   }
 
   // ── Result ─────────────────────────────────────────────────────────────────
-  const occasions = result?.suitable_occasions ?? [];
-  const archetypes = result?.top_archetypes ?? [];
-
   return (
     <Screen title="Auditory Mirror" subtitle="Instant feedback — not saved to wardrobe.">
       <LiveRegions />
@@ -212,7 +227,7 @@ export default function MirrorScreen() {
       <h2
         ref={resultRef}
         tabIndex={-1}
-        aria-label={`Analysis complete. Works for: ${occasions.join(", ") || "various occasions"}.`}
+        aria-label="Analysis complete."
         style={{ position: "absolute", left: -9999, top: "auto", width: 1, height: 1, overflow: "hidden" }}
       />
 
@@ -222,38 +237,6 @@ export default function MirrorScreen() {
           alt="Your outfit"
           style={{ width: "100%", borderRadius: 16, marginBottom: 16, maxHeight: 320, objectFit: "cover" }}
         />
-      )}
-
-      {/* Occasions + Archetypes */}
-      {(occasions.length > 0 || archetypes.length > 0) && (
-        <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
-          {occasions.length > 0 && (
-            <div style={{
-              flex: 1, background: C.surface, borderRadius: 14, padding: "14px 16px",
-              border: `1px solid ${C.border}`,
-            }}>
-              <div style={{ fontFamily: FONT, fontSize: 11, color: C.muted, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 6 }}>
-                Works for
-              </div>
-              {occasions.map((occ) => (
-                <div key={occ} style={{ fontFamily: FONT, fontSize: 13, color: C.text, lineHeight: 1.6 }}>{occ}</div>
-              ))}
-            </div>
-          )}
-          {archetypes.length > 0 && (
-            <div style={{
-              flex: 1, background: C.surface, borderRadius: 14, padding: "14px 16px",
-              border: `1px solid ${C.border}`,
-            }}>
-              <div style={{ fontFamily: FONT, fontSize: 11, color: C.muted, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 6 }}>
-                Style
-              </div>
-              {archetypes.map((arch) => (
-                <div key={arch} style={{ fontFamily: FONT, fontSize: 13, color: C.text, lineHeight: 1.6 }}>{arch}</div>
-              ))}
-            </div>
-          )}
-        </div>
       )}
 
       {/* Full analysis transcript */}
@@ -279,10 +262,16 @@ export default function MirrorScreen() {
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <BigButton
-          label="Read Again"
-          hint="Hear the full assessment read aloud again"
+          label="Short Description"
+          hint="Hear a quick summary: what you're wearing and the overall verdict"
           icon="🔊"
-          onClick={speakResult}
+          onClick={speakShort}
+        />
+        <BigButton
+          label="Long Description"
+          hint="Hear the full breakdown: garments, colour feedback, fit, verdict, and top fix"
+          icon="📋"
+          onClick={speakLong}
         />
         <BigButton
           label="Try Again"

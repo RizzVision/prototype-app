@@ -20,8 +20,9 @@ import { useApp } from "../contexts/AppContext";
 import { useVoice } from "../contexts/VoiceContext";
 import { useWardrobe } from "../contexts/WardrobeContext";
 import { analyzeOutfit, ImageQualityError } from "../services/rizzVisionApi";
-import { SCREENS, C, FONT } from "../utils/constants";
+import { SCREENS, OCCASIONS, C, FONT } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
+import ChoiceList from "../components/ChoiceList";
 
 
 function hexDistance(a, b) {
@@ -61,7 +62,8 @@ export default function ScanScreen() {
   const { addItem, items: wardrobeItems } = useWardrobe();
   const { announce, LiveRegions } = useAnnounce();
 
-  const [phase, setPhase] = useState("camera"); // camera | analyzing | error | result | naming | saving | confirm_duplicate
+  const [phase, setPhase] = useState("occasion"); // occasion | camera | analyzing | error | result | naming | saving | confirm_duplicate
+  const [selectedOccasion, setSelectedOccasion] = useState(null);
   const [result, setResult] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
@@ -76,7 +78,10 @@ export default function ScanScreen() {
   const nameInputRef = useRef(null);
 
   useEffect(() => {
-    if (phase === "camera") {
+    if (phase === "occasion") {
+      speak("What occasion are you dressing for? Pick one so I can judge your outfit for it.");
+      announce("Pick an occasion to dress for.", "polite");
+    } else if (phase === "camera") {
       speak(RESPONSES.scanReady);
       announce("Camera ready. Point at your outfit, tap Describe to check framing, then tap Capture.", "polite");
     }
@@ -88,6 +93,9 @@ export default function ScanScreen() {
       resultHeadingRef.current.focus();
     }
   }, [phase]);
+
+  // The initial auto-speak is handled inside handleCapture.
+  // This effect is intentionally left empty — no double-speak on phase change.
 
   // Focus the name input when naming phase starts or moves to next garment
   useEffect(() => {
@@ -129,7 +137,8 @@ export default function ScanScreen() {
     speak(RESPONSES.analyzing);
 
     try {
-      const analysis = await analyzeOutfit(base64);
+      const occasionLabel = OCCASIONS.find(o => o.id === selectedOccasion)?.label || "";
+      const analysis = await analyzeOutfit(base64, occasionLabel);
       const garments = analysis.raw?.garment_details || [];
 
       // If multiple garments detected, reject and ask user to scan one at a time
@@ -146,10 +155,18 @@ export default function ScanScreen() {
       setResult(analysis);
       setPhase("result");
 
+      // Auto-speak the short description on arrival
       if (analysis.speech_segments?.length) {
-        const fullText = analysis.speech_segments.map((s) => s.text).join("  ");
-        announce(fullText, "polite");
-        speak(fullText);
+        const segMap = {};
+        for (const s of analysis.speech_segments) segMap[s.id] = s.text;
+        const shortParts = [
+          segMap["garments"],
+          segMap["overall_verdict"],
+          analysis.occasion_verdict,
+        ].filter(Boolean);
+        const shortText = shortParts.join("  ");
+        announce(shortText, "polite");
+        speak(shortText);
       }
     } catch (err) {
       const msg =
@@ -252,13 +269,35 @@ export default function ScanScreen() {
     setPreviewUrl(null);
     setErrorMsg("");
     setDuplicateInfo(null);
-    setPhase("camera");
+    setSelectedOccasion(null);
+    setPhase("occasion");
   }, []);
 
-  const speakResult = useCallback(() => {
-    if (result?.speech_segments?.length) {
-      speak(result.speech_segments.map((s) => s.text).join("  "));
-    }
+  /**
+   * Short description: what they're wearing + overall verdict + occasion verdict.
+   * Gives the user a quick gist without all the detail.
+   */
+  const speakShort = useCallback(() => {
+    if (!result) return;
+    const segMap = {};
+    for (const s of result.speech_segments || []) segMap[s.id] = s.text;
+    const parts = [
+      segMap["garments"],
+      segMap["overall_verdict"],
+      result.occasion_verdict,
+    ].filter(Boolean);
+    if (parts.length) speak(parts.join("  "));
+  }, [result, speak]);
+
+  /**
+   * Long description: full ordered breakdown — garments, color, fit, verdict,
+   * top fix, then occasion verdict.
+   */
+  const speakLong = useCallback(() => {
+    if (!result) return;
+    const parts = (result.speech_segments || []).map((s) => s.text);
+    if (result.occasion_verdict) parts.push(result.occasion_verdict);
+    if (parts.length) speak(parts.join("  "));
   }, [result, speak]);
 
   // Voice command listener — placed after all callbacks to avoid TDZ in prod build
@@ -267,11 +306,11 @@ export default function ScanScreen() {
       const cmd = e.detail;
       if (cmd.type === "SAVE_ITEM" && phase === "result") handleSave();
       else if (cmd.type === "DISCARD_ITEM" && phase === "result") reset();
-      else if (cmd.type === "READ_RESULT" && phase === "result") speakResult();
+      else if (cmd.type === "READ_RESULT" && phase === "result") speakLong();
     };
     window.addEventListener("voiceCommand", handler);
     return () => window.removeEventListener("voiceCommand", handler);
-  }, [phase, handleSave, reset, speakResult]);
+  }, [phase, handleSave, reset, speakLong]);
 
   const handleUpload = useCallback((e) => {
     const file = e.target.files?.[0];
@@ -284,6 +323,46 @@ export default function ScanScreen() {
     };
     reader.readAsDataURL(file);
   }, [handleCapture]);
+
+  // ── Occasion Picker ────────────────────────────────────────────────────────
+  if (phase === "occasion") {
+    return (
+      <Screen title="What's the occasion?" subtitle="I'll judge your outfit for it.">
+        <LiveRegions />
+        <div style={{ marginBottom: 20 }}>
+          <ChoiceList
+            heading="Pick an occasion"
+            items={OCCASIONS}
+            selected={selectedOccasion}
+            onSelect={setSelectedOccasion}
+            announce={announce}
+          />
+        </div>
+        <BigButton
+          label="Scan Item"
+          hint={selectedOccasion
+            ? `Scan outfit for ${OCCASIONS.find(o => o.id === selectedOccasion)?.label}`
+            : "Select an occasion first, then tap to scan"}
+          icon="📸"
+          variant="primary"
+          disabled={!selectedOccasion}
+          onClick={() => {
+            const label = OCCASIONS.find(o => o.id === selectedOccasion)?.label || "";
+            speak(`Got it. Scanning for ${label}. Point the camera at your outfit.`);
+            setPhase("camera");
+          }}
+        />
+        <div style={{ marginTop: 12 }}>
+          <BigButton
+            label="Back"
+            hint="Go back to the main menu"
+            icon="←"
+            onClick={() => navigate(SCREENS.HOME)}
+          />
+        </div>
+      </Screen>
+    );
+  }
 
   // ── Camera ─────────────────────────────────────────────────────────────────
   if (phase === "camera") {
@@ -560,18 +639,18 @@ export default function ScanScreen() {
   }
 
   // ── Result ─────────────────────────────────────────────────────────────────
-  const occasions = result?.suitable_occasions ?? [];
-  const archetypes = result?.top_archetypes ?? [];
+  const occasionLabel = OCCASIONS.find(o => o.id === selectedOccasion)?.label || "";
+  const occasionVerdict = result?.occasion_verdict || "";
 
   return (
-    <Screen title="Outfit Analysis" subtitle={occasions[0] || "Analysis complete"}>
+    <Screen title="Outfit Analysis" subtitle={occasionLabel || "Analysis complete"}>
       <LiveRegions />
 
       {/* Hidden heading receives focus to announce result to screen readers */}
       <h2
         ref={resultHeadingRef}
         tabIndex={-1}
-        aria-label={`Analysis complete. Works for: ${occasions.join(", ") || "various occasions"}.`}
+        aria-label={`Analysis complete${occasionLabel ? ` for ${occasionLabel}` : ""}.${occasionVerdict ? " " + occasionVerdict : ""}`}
         style={{ position: "absolute", left: -9999, top: "auto", width: 1, height: 1, overflow: "hidden" }}
       />
 
@@ -583,35 +662,18 @@ export default function ScanScreen() {
         />
       )}
 
-      {/* Occasions + Archetypes */}
-      {(occasions.length > 0 || archetypes.length > 0) && (
-        <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
-          {occasions.length > 0 && (
-            <div style={{
-              flex: 1, background: C.surface, borderRadius: 14, padding: "14px 16px",
-              border: `1px solid ${C.border}`,
-            }}>
-              <div style={{ fontFamily: FONT, fontSize: 11, color: C.muted, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 6 }}>
-                Works for
-              </div>
-              {occasions.map((occ) => (
-                <div key={occ} style={{ fontFamily: FONT, fontSize: 13, color: C.text, lineHeight: 1.6 }}>{occ}</div>
-              ))}
-            </div>
-          )}
-          {archetypes.length > 0 && (
-            <div style={{
-              flex: 1, background: C.surface, borderRadius: 14, padding: "14px 16px",
-              border: `1px solid ${C.border}`,
-            }}>
-              <div style={{ fontFamily: FONT, fontSize: 11, color: C.muted, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 6 }}>
-                Style
-              </div>
-              {archetypes.map((arch) => (
-                <div key={arch} style={{ fontFamily: FONT, fontSize: 13, color: C.text, lineHeight: 1.6 }}>{arch}</div>
-              ))}
-            </div>
-          )}
+      {/* Occasion verdict card */}
+      {occasionVerdict && (
+        <div style={{
+          background: C.surface, borderRadius: 14, padding: "16px 18px", marginBottom: 14,
+          border: `2px solid ${C.focus}`,
+        }}>
+          <div style={{ fontFamily: FONT, fontSize: 11, color: C.focus, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 6 }}>
+            {occasionLabel ? `${occasionLabel} verdict` : "Occasion verdict"}
+          </div>
+          <p style={{ fontFamily: FONT, fontSize: 15, color: C.text, lineHeight: 1.75, margin: 0 }}>
+            {occasionVerdict}
+          </p>
         </div>
       )}
 
@@ -638,10 +700,16 @@ export default function ScanScreen() {
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <BigButton
-          label="Read Analysis Again"
-          hint="Hear the complete outfit analysis read aloud"
+          label="Short Description"
+          hint="Hear a quick summary: what you're wearing, the verdict, and whether it works for your occasion"
           icon="🔊"
-          onClick={speakResult}
+          onClick={speakShort}
+        />
+        <BigButton
+          label="Long Description"
+          hint="Hear the full breakdown: garments, colour feedback, fit, verdict, and top fix"
+          icon="📋"
+          onClick={speakLong}
         />
         <BigButton
           label="Save to Wardrobe"

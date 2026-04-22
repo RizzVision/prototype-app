@@ -40,18 +40,20 @@ export class ImageQualityError extends Error {
 /**
  * Analyze an outfit image with the full RizzVision pipeline.
  *
- * @param {string} base64 Raw base64 image string (no "data:image/..." prefix).
+ * @param {string} base64   Raw base64 image string (no "data:image/..." prefix).
+ * @param {string} occasion Optional occasion the user is dressing for.
  * @returns {Promise<AnalysisResult>} Full analysis including speech_segments,
- *   color_score, color_label, best_occasion, style_archetype, raw engine data.
+ *   occasion_verdict, skin_detected, raw engine data.
  *
  * @throws {ImageQualityError} When the backend rejects the image (422).
  *   Use .userMessage for a spoken sentence ready for TTS.
  * @throws {Error} For network errors or unexpected server failures.
  */
-export async function analyzeOutfit(base64) {
+export async function analyzeOutfit(base64, occasion = "") {
   const blob = base64ToBlob(base64);
   const formData = new FormData();
   formData.append("image", blob, "outfit.jpg");
+  if (occasion) formData.append("occasion", occasion);
 
   let res;
   try {
