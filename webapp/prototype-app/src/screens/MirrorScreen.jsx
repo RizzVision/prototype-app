@@ -143,6 +143,7 @@ export default function MirrorScreen() {
           </div>
           <CameraView
             onCapture={handleCapture}
+            onDescribe={(desc) => { announce(desc, "polite"); speak(desc); }}
             onError={(msg) => { announce(msg, "assertive"); speak(msg); }}
           />
         </div>

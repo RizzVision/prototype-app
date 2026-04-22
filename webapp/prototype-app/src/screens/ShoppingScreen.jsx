@@ -103,6 +103,7 @@ export default function ShoppingScreen() {
           {scanning ? (
             <CameraView
               onCapture={handleCapture}
+              onDescribe={(desc) => { announce(desc, "polite"); speak(desc); }}
               autoCapture={true}
               captureInterval={8000}
               onError={(msg) => { announce(msg, "assertive"); speak(msg); }}
