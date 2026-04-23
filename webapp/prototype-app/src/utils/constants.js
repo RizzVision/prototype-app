@@ -20,6 +20,7 @@ export const SCREENS = {
   SHOPPING: "shopping",
   MIRROR: "mirror",
   EDIT_ITEM: "editItem",
+  IDENTIFY: "identify",
 };
 
 export const CATEGORIES = [

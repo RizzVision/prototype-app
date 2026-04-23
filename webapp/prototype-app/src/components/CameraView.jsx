@@ -2,6 +2,96 @@ import { useRef, useEffect, useState, useCallback } from "react";
 import { C, FONT } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
 
+// Clothing-related COCO-SSD classes and person (who is wearing clothes)
+const CLOTHING_CLASSES = new Set([
+  "person", "tie", "handbag", "backpack", "suitcase", "umbrella",
+]);
+
+// Lazy-load COCO-SSD model once across all instances
+let cocoModel = null;
+let cocoLoading = false;
+let cocoCallbacks = [];
+
+async function getCocoModel() {
+  if (cocoModel) return cocoModel;
+  if (cocoLoading) {
+    return new Promise((resolve) => cocoCallbacks.push(resolve));
+  }
+  cocoLoading = true;
+  try {
+    const cocoSsd = await import("@tensorflow-models/coco-ssd");
+    await import("@tensorflow/tfjs");
+    const model = await cocoSsd.load({ base: "lite_mobilenet_v2" });
+    cocoModel = model;
+    cocoCallbacks.forEach((cb) => cb(model));
+    cocoCallbacks = [];
+    return model;
+  } catch {
+    cocoLoading = false;
+    return null;
+  }
+}
+
+function buildDescription(predictions, videoWidth, videoHeight) {
+  if (!predictions || predictions.length === 0) {
+    return RESPONSES.whatsInFocus.noClothing;
+  }
+
+  // Filter to confident detections
+  const confident = predictions.filter((p) => p.score >= 0.4);
+  if (confident.length === 0) return RESPONSES.whatsInFocus.noClothing;
+
+  // Check if there's a person (someone wearing clothes) or clothing accessory
+  const clothingDetections = confident.filter((p) => CLOTHING_CLASSES.has(p.class));
+  const allClasses = confident.map((p) => p.class);
+
+  if (clothingDetections.length === 0) {
+    // Describe what IS visible if it's not clothing-related
+    const topClass = confident[0].class;
+    return `I can see ${topClass === "cell phone" ? "a phone" : `a ${topClass}`} in the frame. Please point the camera at clothing you want to scan.`;
+  }
+
+  // Find the best clothing/person detection
+  const best = clothingDetections.reduce((a, b) => (a.score > b.score ? a : b));
+  const [x, y, w, h] = best.bbox;
+  const area = (w * h) / (videoWidth * videoHeight);
+  const cx = (x + w / 2) / videoWidth;
+  const cy = (y + h / 2) / videoHeight;
+
+  // Framing feedback
+  if (area < 0.05) return RESPONSES.whatsInFocus.tooSmall;
+  if (area > 0.88) return RESPONSES.whatsInFocus.tooLarge;
+
+  // Position guidance
+  let position = "";
+  if (cx < 0.35) position = "Move camera slightly right. ";
+  else if (cx > 0.65) position = "Move camera slightly left. ";
+  if (cy < 0.3) position += "Move camera slightly down. ";
+  else if (cy > 0.7) position += "Move camera slightly up. ";
+
+  // Count non-person items visible
+  const otherItems = allClasses.filter((c) => c !== "person");
+
+  let description = "";
+  if (best.class === "person") {
+    if (otherItems.length > 0) {
+      description = `Person wearing clothing detected. Also visible: ${otherItems.join(", ")}. `;
+    } else {
+      description = "Person wearing clothing is in frame. ";
+    }
+  } else {
+    description = `${best.class} detected in frame. `;
+  }
+
+  if (position) {
+    description += position;
+  } else {
+    description += RESPONSES.whatsInFocus.ready;
+  }
+
+  return description.trim();
+}
+
 export default function CameraView({ onCapture, onError, captureRef, onDescribe, autoCapture = false, captureInterval = 6000 }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -11,6 +101,14 @@ export default function CameraView({ onCapture, onError, captureRef, onDescribe,
   const [ready, setReady] = useState(false);
   const [error, setError] = useState(null);
   const [facingMode, setFacingMode] = useState("environment");
+  const [modelReady, setModelReady] = useState(false);
+
+  // Preload model as soon as component mounts
+  useEffect(() => {
+    getCocoModel().then((m) => {
+      if (m) setModelReady(true);
+    });
+  }, []);
 
   const startCamera = useCallback(async (facing) => {
     const mode = facing ?? facingModeRef.current;
@@ -59,70 +157,6 @@ export default function CameraView({ onCapture, onError, captureRef, onDescribe,
     return canvas.toDataURL("image/jpeg", 0.85);
   }, []);
 
-  const estimateSubjectBox = useCallback((data, width, height) => {
-    if (!data || !width || !height) return null;
-
-    const sampleStep = 4;
-    const borderPixels = [];
-    const pushPixel = (x, y) => {
-      const idx = (y * width + x) * 4;
-      borderPixels.push([data[idx], data[idx + 1], data[idx + 2]]);
-    };
-
-    for (let x = 0; x < width; x += sampleStep) {
-      pushPixel(x, 0);
-      pushPixel(x, height - 1);
-    }
-    for (let y = sampleStep; y < height - sampleStep; y += sampleStep) {
-      pushPixel(0, y);
-      pushPixel(width - 1, y);
-    }
-
-    if (borderPixels.length === 0) return null;
-
-    const background = borderPixels.reduce((acc, [r, g, b]) => {
-      acc.r += r;
-      acc.g += g;
-      acc.b += b;
-      return acc;
-    }, { r: 0, g: 0, b: 0 });
-    background.r /= borderPixels.length;
-    background.g /= borderPixels.length;
-    background.b /= borderPixels.length;
-
-    let minX = width;
-    let minY = height;
-    let maxX = -1;
-    let maxY = -1;
-    let activePixels = 0;
-
-    for (let y = 0; y < height; y += sampleStep) {
-      for (let x = 0; x < width; x += sampleStep) {
-        const idx = (y * width + x) * 4;
-        const r = data[idx];
-        const g = data[idx + 1];
-        const b = data[idx + 2];
-        const delta = Math.abs(r - background.r) + Math.abs(g - background.g) + Math.abs(b - background.b);
-        if (delta < 90) continue;
-        activePixels++;
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
-      }
-    }
-
-    if (activePixels < 120 || maxX <= minX || maxY <= minY) return null;
-
-    return {
-      x1: minX / width,
-      y1: minY / height,
-      x2: maxX / width,
-      y2: maxY / height,
-      confidence: Math.min(1, activePixels / ((width * height) / 18)),
-    };
-  }, []);
-
   const playShutterSound = () => {
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -161,29 +195,25 @@ export default function CameraView({ onCapture, onError, captureRef, onDescribe,
     } catch (_) {}
   };
 
-  const describeWhatsFocused = useCallback(() => {
-    if (!ready || !videoRef.current || !guidanceCanvasRef.current) return;
-    const video = videoRef.current;
-    const gc = guidanceCanvasRef.current;
-    gc.width  = Math.floor(video.videoWidth  / 2);
-    gc.height = Math.floor(video.videoHeight / 2);
-    const ctx2 = gc.getContext("2d");
-    ctx2.drawImage(video, 0, 0, gc.width, gc.height);
-    const imageData = ctx2.getImageData(0, 0, gc.width, gc.height);
-    const box = estimateSubjectBox(imageData.data, gc.width, gc.height);
+  const describeWhatsFocused = useCallback(async () => {
+    if (!ready || !videoRef.current) return;
 
-    let description;
-    if (!box || box.confidence < 0.15) {
-      description = RESPONSES.whatsInFocus.noClothing;
-    } else {
-      const area = (box.x2 - box.x1) * (box.y2 - box.y1);
-      if (area < 0.06)      description = RESPONSES.whatsInFocus.tooSmall;
-      else if (area > 0.85) description = RESPONSES.whatsInFocus.tooLarge;
-      else                  description = RESPONSES.whatsInFocus.ready;
+    // Fall back to pixel contrast if model not ready yet
+    if (!modelReady || !cocoModel) {
+      if (onDescribe) onDescribe("Still loading detection model. Please wait a moment.");
+      return;
     }
-    if (description === RESPONSES.whatsInFocus.ready) playReadyChime();
-    if (onDescribe) onDescribe(description);
-  }, [ready, estimateSubjectBox, onDescribe]);
+
+    try {
+      const video = videoRef.current;
+      const predictions = await cocoModel.detect(video);
+      const description = buildDescription(predictions, video.videoWidth, video.videoHeight);
+      if (description === RESPONSES.whatsInFocus.ready) playReadyChime();
+      if (onDescribe) onDescribe(description);
+    } catch {
+      if (onDescribe) onDescribe("Could not analyze the frame. Try again.");
+    }
+  }, [ready, modelReady, onDescribe]);
 
   const handleCapture = useCallback(() => {
     playShutterSound();
@@ -248,6 +278,19 @@ export default function CameraView({ onCapture, onError, captureRef, onDescribe,
           boxSizing: "border-box",
         }} />
       </div>
+
+      {/* Model loading indicator */}
+      {!modelReady && ready && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute", top: 12, left: 12,
+            background: "rgba(0,0,0,0.7)", borderRadius: 10, padding: "5px 12px",
+          }}
+        >
+          <span style={{ fontFamily: FONT, fontSize: 12, color: C.muted }}>Loading detection…</span>
+        </div>
+      )}
 
       {/* Flip camera button */}
       <div style={{ position: "absolute", top: 20, right: 20 }}>

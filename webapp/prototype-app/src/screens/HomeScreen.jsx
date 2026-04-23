@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import Screen from "../components/Screen";
 import BigButton from "../components/BigButton";
 import MicButton from "../components/MicButton";
@@ -9,22 +9,17 @@ import { SCREENS } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
 
 export default function HomeScreen() {
-  const { navigate, descriptionMode, toggleDescriptionMode } = useApp();
+  const { navigate } = useApp();
   const { signOut } = useAuth();
-  const { speak, isListening, toggleListening } = useVoice();
+  const { speak, isListening, isThinking, toggleListening } = useVoice();
 
   useEffect(() => {
-    const timer = setTimeout(() => speak(RESPONSES.welcome), 400);
+    const timer = setTimeout(() => speak(RESPONSES.welcome), 500);
     return () => clearTimeout(timer);
   }, [speak]);
 
-  // Only speak tips when mic transitions from off → on (not on initial mount)
-  const prevListeningRef = useRef(null);
   useEffect(() => {
-    if (prevListeningRef.current === false && isListening) {
-      speak("You can say things like: identify my outfit, what should I wear, my wardrobe, mirror, or shopping mode.");
-    }
-    prevListeningRef.current = isListening;
+    if (isListening) speak("I'm listening. You can say a command or ask me anything — like how many items are in my wardrobe, or what can you do.");
   }, [isListening, speak]);
 
   return (
@@ -45,7 +40,7 @@ export default function HomeScreen() {
           aria-atomic="true"
           style={{ fontSize: 14, color: "#888", textAlign: "center", marginBottom: 8 }}
         >
-          {isListening ? "Listening — say a command" : "Tap to start listening"}
+          {isThinking ? "Thinking..." : isListening ? "Listening — say anything" : "Tap to start listening"}
         </div>
 
         <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 14 }}>
@@ -91,22 +86,7 @@ export default function HomeScreen() {
           </div>
         </div>
 
-        <BigButton
-          label={descriptionMode === "short" ? "Description: Short" : "Description: Long"}
-          hint={descriptionMode === "short"
-            ? "Short summaries are on. Tap to switch to full descriptions."
-            : "Full descriptions are on. Tap to switch to short summaries."}
-          icon="📝"
-          onClick={() => {
-            toggleDescriptionMode();
-            const msg = descriptionMode === "short"
-              ? "Switched to long descriptions."
-              : "Switched to short descriptions.";
-            speak(msg);
-          }}
-        />
-
-        <div style={{ marginTop: 8 }}>
+        <div style={{ marginTop: 24 }}>
           <BigButton
             label="Sign Out"
             hint="Sign out of your account"

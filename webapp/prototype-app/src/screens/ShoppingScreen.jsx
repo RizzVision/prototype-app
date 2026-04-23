@@ -10,17 +10,17 @@
  * Adding items to the wardrobe is intentionally disabled in this mode.
  */
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
 import Screen from "../components/Screen";
 import BigButton from "../components/BigButton";
 import CameraView from "../components/CameraView";
+import ContextChat from "../components/ContextChat";
 import { useAnnounce } from "../components/LiveRegions";
 import { useVoice } from "../contexts/VoiceContext";
 import { useWardrobe } from "../contexts/WardrobeContext";
-import { analyzeForShopping, askShoppingFollowUp, ImageQualityError } from "../services/rizzVisionApi";
+import { analyzeForShopping, ImageQualityError } from "../services/rizzVisionApi";
 import { C, FONT } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
-import { playSuccess, playError } from "../utils/sounds";
 
 export default function ShoppingScreen() {
   const { speak } = useVoice();
@@ -30,17 +30,11 @@ export default function ShoppingScreen() {
   const [scanning, setScanning] = useState(true);
   const [result, setResult] = useState(null);
   const [processing, setProcessing] = useState(false);
-  const [followUpQuestion, setFollowUpQuestion] = useState("");
-  const [followUpAnswer, setFollowUpAnswer] = useState(null);
-  const [askingFollowUp, setAskingFollowUp] = useState(false);
-  const inputRef = useRef(null);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      speak(RESPONSES.shoppingStart);
-      announce(RESPONSES.shoppingStart, "polite");
-    }, 300);
-    return () => clearTimeout(timer);
+    const msg = RESPONSES.shoppingStart;
+    speak(msg);
+    announce(msg, "polite");
   }, [speak, announce]);
 
   const handleCapture = useCallback(async (base64) => {
@@ -51,7 +45,6 @@ export default function ShoppingScreen() {
 
     try {
       const analysis = await analyzeForShopping(base64, wardrobeItems);
-      playSuccess();
       setResult(analysis);
 
       const segments = analysis.speech_segments ?? [];
@@ -62,7 +55,6 @@ export default function ShoppingScreen() {
       }
     } catch (err) {
       if (err instanceof ImageQualityError) {
-        playError();
         announce(err.userMessage, "assertive");
         speak(err.userMessage);
       }
@@ -86,24 +78,6 @@ export default function ShoppingScreen() {
       speak(result.speech_segments.map((s) => s.text).join("  "));
     }
   }, [result, speak]);
-
-  const submitFollowUp = useCallback(async () => {
-    const q = followUpQuestion.trim();
-    if (!q || !result?.analysis_context) return;
-    setAskingFollowUp(true);
-    try {
-      const { answer } = await askShoppingFollowUp(q, result.analysis_context);
-      setFollowUpAnswer(answer);
-      announce(answer, "polite");
-      speak(answer);
-    } catch {
-      const msg = "Could not get an answer. Please try again.";
-      announce(msg, "assertive");
-      speak(msg);
-    } finally {
-      setAskingFollowUp(false);
-    }
-  }, [followUpQuestion, result, speak, announce]);
 
   // Voice commands
   useEffect(() => {
@@ -129,6 +103,7 @@ export default function ShoppingScreen() {
           {scanning ? (
             <CameraView
               onCapture={handleCapture}
+              onDescribe={(desc) => { announce(desc, "polite"); speak(desc); }}
               autoCapture={true}
               captureInterval={8000}
               onError={(msg) => { announce(msg, "assertive"); speak(msg); }}
@@ -250,67 +225,13 @@ export default function ShoppingScreen() {
                 </div>
               ))}
 
-              {/* Follow-up question */}
-              <div style={{ marginTop: 6, marginBottom: 14 }}>
-                <div style={{ fontFamily: FONT, fontSize: 12, color: C.muted, marginBottom: 8 }}>
-                  Ask a follow-up question about this item:
-                </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <input
-                    ref={inputRef}
-                    type="text"
-                    value={followUpQuestion}
-                    onChange={(e) => setFollowUpQuestion(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && submitFollowUp()}
-                    placeholder="e.g. Would this work for a wedding?"
-                    aria-label="Follow-up question about this item"
-                    style={{
-                      flex: 1,
-                      background: C.surface,
-                      border: `1px solid ${C.border}`,
-                      borderRadius: 10,
-                      padding: "10px 14px",
-                      fontFamily: FONT,
-                      fontSize: 14,
-                      color: C.text,
-                      outline: "none",
-                    }}
-                  />
-                  <button
-                    onClick={submitFollowUp}
-                    disabled={!followUpQuestion.trim() || askingFollowUp}
-                    aria-label="Submit follow-up question"
-                    style={{
-                      background: followUpQuestion.trim() && !askingFollowUp ? C.focus : C.surface,
-                      color: followUpQuestion.trim() && !askingFollowUp ? "#000" : C.muted,
-                      border: "none",
-                      borderRadius: 10,
-                      padding: "10px 16px",
-                      fontFamily: FONT,
-                      fontSize: 14,
-                      fontWeight: 700,
-                      cursor: followUpQuestion.trim() && !askingFollowUp ? "pointer" : "not-allowed",
-                    }}
-                  >
-                    {askingFollowUp ? "…" : "Ask"}
-                  </button>
-                </div>
-
-                {followUpAnswer && (
-                  <div style={{
-                    marginTop: 10,
-                    background: C.surface, borderRadius: 12, padding: 14,
-                    border: `1px solid ${C.focus}`,
-                  }}>
-                    <div style={{ fontFamily: FONT, fontSize: 10, color: C.focus, textTransform: "uppercase", letterSpacing: "0.2em", marginBottom: 6 }}>
-                      Answer
-                    </div>
-                    <p style={{ fontFamily: FONT, fontSize: 15, color: C.text, lineHeight: 1.7, margin: 0 }}>
-                      {followUpAnswer}
-                    </p>
-                  </div>
-                )}
-              </div>
+              {/* Follow-up chatbot — full multi-turn conversation about this item */}
+              <ContextChat
+                context={result.speech_segments?.map((s) => s.text).join("\n") || ""}
+                feature="shopping"
+                speak={speak}
+                announce={announce}
+              />
             </>
           ) : (
             <p aria-live="polite" style={{ fontFamily: FONT, fontSize: 17, color: C.muted, lineHeight: 1.7, marginBottom: 14 }}>

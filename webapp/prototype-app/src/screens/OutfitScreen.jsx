@@ -2,22 +2,19 @@ import { useState, useEffect, useCallback } from "react";
 import Screen from "../components/Screen";
 import BigButton from "../components/BigButton";
 import ChoiceList from "../components/ChoiceList";
+import ContextChat from "../components/ContextChat";
 import { useApp } from "../contexts/AppContext";
 import { useVoice } from "../contexts/VoiceContext";
+import { useAnnounce } from "../components/LiveRegions";
 import { useWardrobe } from "../contexts/WardrobeContext";
 import { getOutfitSuggestion } from "../services/outfitRecommendation";
 import { OCCASIONS, SCREENS, C, FONT } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
 
-function getShortSuggestion(text) {
-  if (!text) return "";
-  const sentences = text.split(". ");
-  return sentences.length > 1 ? sentences[0] + ". " + sentences[1] + "." : sentences[0];
-}
-
 export default function OutfitScreen() {
-  const { navParams, navigate, descriptionMode, toggleDescriptionMode } = useApp();
+  const { navParams, navigate } = useApp();
   const { speak } = useVoice();
+  const { announce, LiveRegions } = useAnnounce();
   const { items } = useWardrobe();
   const [phase, setPhase] = useState("occasion"); // occasion | loading | result
   const [occasion, setOccasion] = useState(null);
@@ -26,18 +23,15 @@ export default function OutfitScreen() {
   const anchorItem = navParams?.anchorItem || null;
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (items.length === 0) {
-        speak("Your wardrobe is empty. Add some items first by scanning clothing.");
-        return;
-      }
-      if (anchorItem) {
-        speak(`Building an outfit around your ${anchorItem.name}. What occasion are you dressing for?`);
-      } else {
-        speak(RESPONSES.outfitPrompt);
-      }
-    }, 300);
-    return () => clearTimeout(timer);
+    if (items.length === 0) {
+      speak("Your wardrobe is empty. Add some items first by scanning clothing.");
+      return;
+    }
+    if (anchorItem) {
+      speak(`Building an outfit around your ${anchorItem.name}. What occasion are you dressing for?`);
+    } else {
+      speak(RESPONSES.outfitPrompt);
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -60,7 +54,7 @@ export default function OutfitScreen() {
       });
       setResult(response);
       setPhase("result");
-      speak(descriptionMode === "short" ? getShortSuggestion(response) : response);
+      speak(response);
     } catch {
       speak(RESPONSES.error);
       setPhase("occasion");
@@ -76,7 +70,7 @@ export default function OutfitScreen() {
       } else if (cmd.type === "CONFIRM") {
         if (phase === "occasion" && occasion) generateOutfit();
       } else if (cmd.type === "READ_RESULT" && phase === "result") {
-        speak(descriptionMode === "short" ? getShortSuggestion(result) : result);
+        speak(result);
       }
     };
     window.addEventListener("voiceCommand", handler);
@@ -143,45 +137,58 @@ export default function OutfitScreen() {
   }
 
   // Result phase
-  const displayedResult = descriptionMode === "short" ? getShortSuggestion(result) : result;
+  const occasionLabel = OCCASIONS.find(o => o.id === occasion)?.label || occasion;
+  const outfitChatContext = result
+    ? `Occasion: ${occasionLabel}\nOutfit suggestion: ${result}`
+    : "";
+
+  // Extract item names mentioned in the suggestion so IdentifyScreen can show them as hints
+  const mentionedItems = items
+    .filter((item) => result && result.toLowerCase().includes(item.name.toLowerCase()))
+    .map((item) => item.name);
 
   return (
-    <Screen title="Your Outfits" subtitle={`For ${OCCASIONS.find(o => o.id === occasion)?.label || occasion}`}>
-      <div style={{
-        background: C.surface, borderRadius: 16, padding: 20,
-        border: `1px solid ${C.border}`, marginBottom: 20,
-      }}>
-        <pre style={{
-          fontFamily: FONT, fontSize: 17, color: C.text, lineHeight: 1.8,
-          whiteSpace: "pre-wrap", margin: 0,
-        }}>{displayedResult}</pre>
+    <Screen title="Your Outfit" subtitle={`For ${occasionLabel}`}>
+      <LiveRegions />
+      <div
+        role="region"
+        aria-label="Outfit suggestion"
+        style={{
+          background: C.surface, borderRadius: 16, padding: 20,
+          border: `1px solid ${C.border}`, marginBottom: 16,
+        }}
+      >
+        <p style={{
+          fontFamily: FONT, fontSize: 18, color: C.text, lineHeight: 1.8, margin: 0,
+        }}>{result}</p>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {/* Follow-up chatbot — anchored to this outfit suggestion */}
+      {outfitChatContext && (
+        <ContextChat
+          context={outfitChatContext}
+          feature="outfit"
+          speak={speak}
+          announce={announce}
+        />
+      )}
+
+      <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 12 }}>
         <BigButton
           label="Read Again"
-          hint="Hear the suggestions again"
+          hint="Hear the outfit suggestion again"
           icon="🔊"
-          onClick={() => speak(displayedResult)}
+          onClick={() => speak(result)}
         />
         <BigButton
-          label={descriptionMode === "short" ? "Switch to Long Description" : "Switch to Short Description"}
-          hint={descriptionMode === "short"
-            ? "Short summaries are on. Tap to switch to full descriptions."
-            : "Full descriptions are on. Tap to switch to short summaries."}
-          icon="📝"
-          onClick={() => {
-            toggleDescriptionMode();
-            const msg = descriptionMode === "short"
-              ? "Switched to long descriptions."
-              : "Switched to short descriptions.";
-            speak(msg);
-            setTimeout(() => speak(descriptionMode === "short" ? result : getShortSuggestion(result)), 1200);
-          }}
+          label="Identify an Item"
+          hint="Point the camera at a garment to find out which saved item it is"
+          icon="🔍"
+          onClick={() => navigate(SCREENS.IDENTIFY, { hintItems: mentionedItems })}
         />
         <BigButton
-          label="Try Different Options"
-          hint="Choose a new occasion"
+          label="Try a Different Occasion"
+          hint="Choose a new occasion for a fresh suggestion"
           icon="🔄"
           onClick={() => { setPhase("occasion"); setOccasion(null); setResult(""); }}
         />

@@ -1,15 +1,10 @@
 """
-Stage 2 - Garment Segmentation
+Clothing presence gate — SegFormer + CLIP two-layer verification.
 
-Isolate each garment as a binary mask before colour extraction.
-Uses SegFormer (mattmdjaga/segformer_b2_clothes) - a clothing-specific
-segmentation model that is lightweight and CPU-compatible.
-
-Garment label mapping (from model output to RizzVision categories):
-  - top: upper-clothes (model label 4)
-  - bottom: skirt (5), pants (6)
-  - full_body: dress (7)
-  - outerwear: scarf (17)
+SegFormer detects whether any clothing pixels are present (pixel coverage gate).
+CLIP then confirms the image actually contains clothing and not a random object
+(semantic gate). If either rejects, an ImageQualityError is raised before the
+LLM is ever called.
 """
 
 import logging
@@ -25,10 +20,7 @@ from app.services.image_ingestion import ImageQualityError
 
 logger = logging.getLogger(__name__)
 
-# Mapping from SegFormer clothing labels to RizzVision garment categories
-# SegFormer labels: 0-Background, 1-Hat, 2-Hair, 3-Sunglasses, 4-Upper-clothes,
-# 5-Skirt, 6-Pants, 7-Dress, 8-Belt, 9-Left-shoe, 10-Right-shoe, 11-Face,
-# 12-Left-leg, 13-Right-leg, 14-Left-arm, 15-Right-arm, 16-Bag, 17-Scarf
+# SegFormer label → garment category
 GARMENT_LABEL_MAP = {
     4: "top",
     5: "bottom",
@@ -37,10 +29,6 @@ GARMENT_LABEL_MAP = {
     17: "outerwear",
 }
 
-# Skin regions for skin tone analysis
-SKIN_LABEL_IDS = [11, 14, 15]  # Face, Left-arm, Right-arm
-
-# Human-readable names for speech output
 GARMENT_DISPLAY_NAMES = {
     "top": "top",
     "bottom": "bottom",
@@ -48,12 +36,94 @@ GARMENT_DISPLAY_NAMES = {
     "outerwear": "outerwear",
 }
 
+# ── CLIP clothing verification ─────────────────────────────────────────────────
+
+_CLOTHING_PROMPTS = [
+    "a photo of a clothing item laid flat or worn by a person",
+    "a shirt, t-shirt, top, blouse, or jacket",
+    "trousers, jeans, pants, skirt, or shorts",
+    "a dress, jumpsuit, or full body garment",
+    "a person wearing an outfit",
+    "clothing on a hanger or mannequin",
+]
+
+_NON_CLOTHING_PROMPTS = [
+    "a random everyday object with no clothing",
+    "food, furniture, electronics, or a vehicle",
+    "a landscape, building, or outdoor scene",
+    "a face or body with no visible clothing",
+    "text, a document, or a screen",
+]
+
+_CLIP_REJECTION_MARGIN = 0.12
+
+
+class _ClipModel:
+    """Lazy-loaded CLIP model singleton."""
+
+    def __init__(self):
+        self._model = None
+        self._processor = None
+        self._loaded = False
+
+    def load(self):
+        if self._loaded:
+            return
+        try:
+            from transformers import CLIPModel, CLIPProcessor
+            self._processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+            self._model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+            self._model.eval()
+            self._loaded = True
+            logger.info("CLIP model loaded for clothing verification")
+        except Exception as exc:
+            logger.warning(f"CLIP model failed to load: {exc}")
+
+
+_clip_model = _ClipModel()
 
 
 def _verify_clothing_with_clip(img: Image.Image) -> None:
-    """Delegate to the public occasion_engine helper to avoid touching CLIP internals."""
-    from app.services.color_engine.occasion_engine import verify_image_contains_clothing
-    verify_image_contains_clothing(img)
+    """
+    Raises ImageQualityError if the image is confidently not clothing.
+    Falls back silently if CLIP is unavailable.
+    """
+    try:
+        if not _clip_model._loaded:
+            _clip_model.load()
+        if not _clip_model._loaded:
+            return
+
+        all_prompts = _CLOTHING_PROMPTS + _NON_CLOTHING_PROMPTS
+        n_clothing = len(_CLOTHING_PROMPTS)
+
+        with torch.inference_mode():
+            inputs = _clip_model._processor(
+                text=all_prompts,
+                images=img,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=77,
+            )
+            outputs = _clip_model._model(**inputs)
+            probs = torch.softmax(outputs.logits_per_image, dim=-1).squeeze(0).cpu().numpy()
+
+        clothing_score = float(probs[:n_clothing].sum())
+        non_clothing_score = float(probs[n_clothing:].sum())
+
+        logger.info(f"CLIP check: clothing={clothing_score:.3f}, non_clothing={non_clothing_score:.3f}")
+
+        if non_clothing_score - clothing_score > _CLIP_REJECTION_MARGIN:
+            raise ImageQualityError(
+                error_code="no_garment_detected",
+                user_message="No clothing detected. Please point the camera at a single clothing item and try again.",
+            )
+
+    except ImageQualityError:
+        raise
+    except Exception as exc:
+        logger.warning(f"CLIP verification failed ({exc}) — proceeding without it")
 
 
 @dataclass
@@ -61,7 +131,7 @@ class GarmentRegion:
     """A detected garment with its binary mask and label."""
     label: str
     display_name: str
-    mask: np.ndarray  # Boolean mask, same HxW as input image
+    mask: np.ndarray
 
 
 class SegmentationModel:
@@ -73,96 +143,48 @@ class SegmentationModel:
         self._device = "cpu"
 
     def _load(self):
-        """Lazy-load model on first use to avoid cold-start overhead at import time."""
         if self._model is not None:
             return
-
         logger.info(f"Loading segmentation model: {settings.SEGMENTATION_MODEL}")
-        self._processor = AutoImageProcessor.from_pretrained(
-            settings.SEGMENTATION_MODEL
-        )
-        self._model = AutoModelForSemanticSegmentation.from_pretrained(
-            settings.SEGMENTATION_MODEL
-        )
+        self._processor = AutoImageProcessor.from_pretrained(settings.SEGMENTATION_MODEL)
+        self._model = AutoModelForSemanticSegmentation.from_pretrained(settings.SEGMENTATION_MODEL)
         self._model.to(self._device)
         self._model.eval()
-        logger.info("Segmentation model loaded successfully")
+        logger.info("Segmentation model loaded")
 
     def _run_inference(self, img: Image.Image) -> np.ndarray:
-        """Run model inference and return the prediction map."""
         self._load()
-
         inputs = self._processor(images=img, return_tensors="pt").to(self._device)
-
         with torch.inference_mode():
             outputs = self._model(**inputs)
-
         logits = outputs.logits
         upsampled = torch.nn.functional.interpolate(
-            logits,
-            size=img.size[::-1],  # (H, W)
-            mode="bilinear",
-            align_corners=False,
+            logits, size=img.size[::-1], mode="bilinear", align_corners=False,
         )
         return upsampled.argmax(dim=1).squeeze().cpu().numpy()
 
-    def segment(self, img: Image.Image) -> tuple[list[GarmentRegion], np.ndarray | None]:
+    def verify_clothing(self, img: Image.Image) -> None:
         """
-        Run garment segmentation on a PIL image.
-
-        Returns:
-            - List of GarmentRegion objects, one per detected garment category.
-            - Skin mask (boolean ndarray) or None if no skin detected.
-
-        Raises ImageQualityError if no garments are detected.
+        Two-gate clothing check: SegFormer pixel coverage + CLIP semantic check.
+        Raises ImageQualityError if no clothing is detected.
+        Returns silently if clothing is confirmed.
         """
         pred = self._run_inference(img)
 
-        # Extract garment regions
-        regions = []
-        for model_label, garment_category in GARMENT_LABEL_MAP.items():
-            mask = pred == model_label
-            if mask.sum() > (mask.size * 0.02):  # require 2% pixel coverage — filters marginal misclassifications
-                existing = next(
-                    (r for r in regions if r.label == garment_category), None
-                )
-                if existing is not None:
-                    existing.mask = existing.mask | mask
-                else:
-                    regions.append(
-                        GarmentRegion(
-                            label=garment_category,
-                            display_name=GARMENT_DISPLAY_NAMES[garment_category],
-                            mask=mask,
-                        )
-                    )
+        has_clothing = any(
+            (pred == label).sum() > (pred.size * 0.02)
+            for label in GARMENT_LABEL_MAP
+        )
 
-        if not regions:
+        if not has_clothing:
             raise ImageQualityError(
                 error_code="no_garment_detected",
                 user_message="No clothing detected. Please point the camera at a single clothing item and try again.",
             )
 
-        # Second gate: CLIP verification that this is actually clothing on a person.
-        # SegFormer can misclassify random objects as garment regions at low pixel
-        # coverage. CLIP provides a high-accuracy semantic check before the LLM runs.
         _verify_clothing_with_clip(img)
 
-        # Extract skin mask (face + arms)
-        skin_mask = np.zeros(pred.shape, dtype=bool)
-        for skin_id in SKIN_LABEL_IDS:
-            skin_mask |= (pred == skin_id)
-
-        # Only return skin mask if it has meaningful coverage
-        if skin_mask.sum() < (skin_mask.size * 0.002):
-            skin_mask = None
-
-        logger.info(
-            f"Detected {len(regions)} garment(s): {[r.label for r in regions]}, "
-            f"skin={'yes' if skin_mask is not None else 'no'}"
-        )
-        return regions, skin_mask
+        logger.info("Clothing presence confirmed")
 
 
-# Module-level singleton - lazy loaded on first use
 segmentation_model = SegmentationModel()

@@ -1,32 +1,32 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Screen from "../components/Screen";
 import BigButton from "../components/BigButton";
 import WardrobeCard from "../components/WardrobeCard";
+import ContextChat from "../components/ContextChat";
 import { useWardrobe } from "../contexts/WardrobeContext";
 import { useVoice } from "../contexts/VoiceContext";
+import { useAnnounce } from "../components/LiveRegions";
 import { useApp } from "../contexts/AppContext";
 import { SCREENS, C, FONT, CATEGORIES } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
-import { playDeleted } from "../utils/sounds";
 
 export default function WardrobeScreen() {
   const { items, loading, removeItem, removeLast } = useWardrobe();
   const { speak } = useVoice();
+  const { announce, LiveRegions } = useAnnounce();
   const { navigate } = useApp();
   const [filter, setFilter] = useState(null);
-  const hasSpokeRef = useRef(false);
+  const [chatItem, setChatItem] = useState(null); // item currently being chatted about
 
   const filtered = filter ? items.filter(i => i.category === filter) : items;
 
-  // Speak count once after initial load — do not re-speak on Supabase real-time updates
   useEffect(() => {
-    if (loading || hasSpokeRef.current) return;
-    hasSpokeRef.current = true;
-    const timer = setTimeout(() => {
-      speak(items.length === 0 ? RESPONSES.wardrobeEmpty : RESPONSES.wardrobeCount(items.length));
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [items, loading, speak]);
+    if (items.length === 0) {
+      speak(RESPONSES.wardrobeEmpty);
+    } else {
+      speak(RESPONSES.wardrobeCount(items.length));
+    }
+  }, [items, speak]);
 
   const readAll = useCallback(() => {
     if (filtered.length === 0) {
@@ -40,13 +40,15 @@ export default function WardrobeScreen() {
   }, [filtered, speak]);
 
   const handleTap = useCallback((item) => {
-    speak(item.description || `${item.name}. ${item.color} ${item.pattern || ""} ${item.type || item.category}.`);
+    const desc = item.description || `${item.name}. ${item.color} ${item.pattern || ""} ${item.type || item.category}.`;
+    speak(desc);
+    setChatItem(item);
   }, [speak]);
 
   const handleDelete = useCallback((id) => {
     const item = items.find(i => i.id === id);
     removeItem(id);
-    if (item) { playDeleted(); speak(RESPONSES.itemDeleted(item.name)); }
+    if (item) speak(RESPONSES.itemDeleted(item.name));
   }, [items, removeItem, speak]);
 
   const handleEdit = useCallback((item) => {
@@ -99,11 +101,25 @@ export default function WardrobeScreen() {
     );
   }
 
+  // Build wardrobe context string for the chatbot (all items listed)
+  const wardrobeChatContext = items.length
+    ? items.map((item) =>
+        `- ${item.name} (${item.category})${item.description ? ": " + item.description : ""}`
+      ).join("\n")
+    : "Wardrobe is empty.";
+
+  // If user tapped a specific item, focus the chat on that item
+  const activeChatContext = chatItem
+    ? `Item tapped: ${chatItem.name} (${chatItem.category})\n${chatItem.description || ""}\n\nFull wardrobe:\n${wardrobeChatContext}`
+    : wardrobeChatContext;
+
   return (
     <Screen
       title="My Wardrobe"
       subtitle={`${filtered.length} item${filtered.length !== 1 ? "s" : ""}${filter ? ` in ${filter}` : ""}`}
     >
+      <LiveRegions />
+
       {/* Filter chips */}
       <div style={{
         display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap",
@@ -119,13 +135,19 @@ export default function WardrobeScreen() {
         ))}
       </div>
 
-      {/* Read All button */}
-      <div style={{ marginBottom: 16 }}>
+      {/* Read All + Identify row */}
+      <div style={{ marginBottom: 16, display: "flex", flexDirection: "column", gap: 10 }}>
         <BigButton
           label="Read My Wardrobe"
           hint="Hear all items read aloud"
           icon="🔊"
           onClick={readAll}
+        />
+        <BigButton
+          label="Identify a Garment"
+          hint="Point the camera at any garment to find out which saved item it is"
+          icon="🔍"
+          onClick={() => navigate(SCREENS.IDENTIFY)}
         />
       </div>
 
@@ -141,6 +163,14 @@ export default function WardrobeScreen() {
           />
         ))}
       </div>
+
+      {/* Wardrobe chatbot — tap an item first to focus questions on it */}
+      <ContextChat
+        context={activeChatContext}
+        feature="wardrobe"
+        speak={speak}
+        announce={announce}
+      />
     </Screen>
   );
 }

@@ -20,9 +20,10 @@ import { useApp } from "../contexts/AppContext";
 import { useVoice } from "../contexts/VoiceContext";
 import { useWardrobe } from "../contexts/WardrobeContext";
 import { analyzeOutfit, ImageQualityError } from "../services/rizzVisionApi";
-import { SCREENS, C, FONT } from "../utils/constants";
+import { SCREENS, OCCASIONS, C, FONT } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
-import { playSuccess, playError, playSaved } from "../utils/sounds";
+import ChoiceList from "../components/ChoiceList";
+import ContextChat from "../components/ContextChat";
 
 
 function hexDistance(a, b) {
@@ -56,27 +57,14 @@ function inferCategory(label) {
   return "tops";
 }
 
-function getDescriptionText(result, mode) {
-  if (!result?.speech_segments?.length) return "";
-  if (mode === "long") {
-    return result.speech_segments.map((s) => s.text).join("  ");
-  }
-  const score = Math.round((result.color_score ?? 0) * 100);
-  const label = result.color_label || "";
-  const occasion = result.best_occasion || "";
-  const archetype = result.style_archetype || "";
-  const line2Parts = [`Color harmony: ${score}% — ${label}.`];
-  if (occasion || archetype) line2Parts.push(`Best for ${occasion}${archetype ? `, ${archetype} style` : ""}.`);
-  return `${result.speech_segments[0].text}  ${line2Parts.join(" ")}`;
-}
-
 export default function ScanScreen() {
-  const { navigate, descriptionMode, toggleDescriptionMode } = useApp();
+  const { navigate } = useApp();
   const { speak } = useVoice();
   const { addItem, items: wardrobeItems } = useWardrobe();
   const { announce, LiveRegions } = useAnnounce();
 
-  const [phase, setPhase] = useState("camera"); // camera | analyzing | error | result | naming | saving | confirm_duplicate
+  const [phase, setPhase] = useState("occasion"); // occasion | camera | analyzing | error | result | naming | saving | confirm_duplicate
+  const [selectedOccasion, setSelectedOccasion] = useState(null);
   const [result, setResult] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
@@ -89,24 +77,15 @@ export default function ScanScreen() {
   const captureRef = useRef(null);
   const resultHeadingRef = useRef(null);
   const nameInputRef = useRef(null);
-  const activeRequestRef = useRef(null);  // AbortController for in-flight analyzeOutfit
-  const navTimerRef = useRef(null);       // setTimeout handle for post-save navigation
-
-  // Cancel any pending navigation timer and in-flight request on unmount
-  useEffect(() => {
-    return () => {
-      if (navTimerRef.current) clearTimeout(navTimerRef.current);
-      if (activeRequestRef.current) activeRequestRef.current.abort();
-    };
-  }, []);
 
   useEffect(() => {
-    if (phase !== "camera") return;
-    const timer = setTimeout(() => {
+    if (phase === "occasion") {
+      speak("What occasion are you dressing for? Pick one so I can judge your outfit for it.");
+      announce("Pick an occasion to dress for.", "polite");
+    } else if (phase === "camera") {
       speak(RESPONSES.scanReady);
       announce("Camera ready. Point at your outfit, tap Describe to check framing, then tap Capture.", "polite");
-    }, 300);
-    return () => clearTimeout(timer);
+    }
   }, [phase, speak, announce]);
 
   // Move focus to result heading so screen readers announce it immediately
@@ -115,6 +94,9 @@ export default function ScanScreen() {
       resultHeadingRef.current.focus();
     }
   }, [phase]);
+
+  // The initial auto-speak is handled inside handleCapture.
+  // This effect is intentionally left empty — no double-speak on phase change.
 
   // Focus the name input when naming phase starts or moves to next garment
   useEffect(() => {
@@ -129,14 +111,26 @@ export default function ScanScreen() {
     speak(description);
   }, [speak, announce]);
 
-  const handleCapture = useCallback(async (base64, dataUrl) => {
-    // Cancel any in-flight request from a previous capture
-    if (activeRequestRef.current) {
-      activeRequestRef.current.abort();
-    }
-    const controller = new AbortController();
-    activeRequestRef.current = controller;
+  const playSuccessSound = () => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const playNote = (freq, startTime) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.setValueAtTime(freq, startTime);
+        gain.gain.setValueAtTime(0.2, startTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.12);
+        osc.start(startTime);
+        osc.stop(startTime + 0.12);
+      };
+      playNote(880, ctx.currentTime);
+      playNote(660, ctx.currentTime + 0.1);
+    } catch (_) {}
+  };
 
+  const handleCapture = useCallback(async (base64, dataUrl) => {
     setPhase("analyzing");
     setPreviewUrl(dataUrl);
     capturedBase64Ref.current = base64;
@@ -144,10 +138,8 @@ export default function ScanScreen() {
     speak(RESPONSES.analyzing);
 
     try {
-      const analysis = await analyzeOutfit(base64, { signal: controller.signal });
-      // Bail out silently if a newer capture has already taken over
-      if (controller.signal.aborted) return;
-      if (activeRequestRef.current === controller) activeRequestRef.current = null;
+      const occasionLabel = OCCASIONS.find(o => o.id === selectedOccasion)?.label || "";
+      const analysis = await analyzeOutfit(base64, occasionLabel);
       const garments = analysis.raw?.garment_details || [];
 
       // If multiple garments detected, reject and ask user to scan one at a time
@@ -160,25 +152,30 @@ export default function ScanScreen() {
         return;
       }
 
-      playSuccess();
+      playSuccessSound();
       setResult(analysis);
       setPhase("result");
 
+      // Auto-speak the short description on arrival
       if (analysis.speech_segments?.length) {
-        const descText = getDescriptionText(analysis, descriptionMode);
-        announce(descText, "polite");
-        speak(descText);
+        const segMap = {};
+        for (const s of analysis.speech_segments) segMap[s.id] = s.text;
+        const shortParts = [
+          segMap["garments"],
+          segMap["overall_verdict"],
+          analysis.occasion_verdict,
+        ].filter(Boolean);
+        const shortText = shortParts.join("  ");
+        announce(shortText, "polite");
+        speak(shortText);
       }
     } catch (err) {
-      // Ignore errors from a request that was intentionally aborted (user retapped)
-      if (err.name === "AbortError") return;
       const msg =
         err instanceof ImageQualityError ? err.userMessage
         : err.message || RESPONSES.error;
       setErrorMsg(msg);
       announce(msg, "assertive");
       speak(msg);
-      playError();
       setPhase("error");
     }
   }, [speak, announce]);
@@ -190,26 +187,25 @@ export default function ScanScreen() {
 
     const names = namesOverride ?? customNames;
 
-    // Build a rich 1-2 line description for the single garment from the analysis segments.
-    // garments segment = what it is; color_feedback = how it reads on skin; fit_feedback = silhouette/occasion.
-    // We compose: "[garments text]. [color_feedback first sentence]. [fit_feedback first sentence]."
-    const segMap = {};
-    for (const seg of result.speech_segments || []) segMap[seg.id] = seg.text;
+    // Use the LLM-generated wardrobe_description if present — it's a 3-4 sentence
+    // identification-optimised description (type, exact colour, texture, fit, distinctive features).
+    // Fall back to stitching TTS segments only if the field is missing (old API responses).
+    let richDescription = result.wardrobe_description?.trim() || "";
 
-    function firstSentence(text) {
-      if (!text) return "";
-      const m = text.match(/[^.!?]+[.!?]/);
-      return m ? m[0].trim() : text.split(" ").slice(0, 18).join(" ");
+    if (!richDescription) {
+      const segMap = {};
+      for (const seg of result.speech_segments || []) segMap[seg.id] = seg.text;
+      function firstSentence(text) {
+        if (!text) return "";
+        const m = text.match(/[^.!?]+[.!?]/);
+        return m ? m[0].trim() : text.split(" ").slice(0, 18).join(" ");
+      }
+      richDescription = [
+        segMap["garments"] || "",
+        firstSentence(segMap["color_feedback"] || ""),
+        firstSentence(segMap["fit_feedback"] || ""),
+      ].filter(Boolean).join(" ").replace(/\s{2,}/g, " ").trim();
     }
-
-    const garmentLine = segMap["garments"] || "";
-    const colorLine = firstSentence(segMap["color_feedback"] || "");
-    const fitLine = firstSentence(segMap["fit_feedback"] || "");
-    const richDescription = [garmentLine, colorLine, fitLine]
-      .filter(Boolean)
-      .join(" ")
-      .replace(/\s{2,}/g, " ")
-      .trim();
 
     const garments = result.raw?.garment_details || [];
     const g = garments[0]; // always single garment at this point
@@ -227,11 +223,9 @@ export default function ScanScreen() {
       });
 
       const savedMsg = RESPONSES.saved(names[0]?.customName || g?.display_name || "item");
-      playSaved();
       speak(savedMsg);
       announce(savedMsg, "polite");
-      if (navTimerRef.current) clearTimeout(navTimerRef.current);
-      navTimerRef.current = setTimeout(() => navigate(SCREENS.WARDROBE), 1500);
+      setTimeout(() => navigate(SCREENS.WARDROBE), 1500);
     } catch {
       speak(RESPONSES.error);
       setPhase("result");
@@ -275,14 +269,36 @@ export default function ScanScreen() {
     setPreviewUrl(null);
     setErrorMsg("");
     setDuplicateInfo(null);
-    setPhase("camera");
+    setSelectedOccasion(null);
+    setPhase("occasion");
   }, []);
 
-  const speakResult = useCallback(() => {
-    if (result?.speech_segments?.length) {
-      speak(getDescriptionText(result, descriptionMode));
-    }
-  }, [result, speak, descriptionMode]);
+  /**
+   * Short description: what they're wearing + overall verdict + occasion verdict.
+   * Gives the user a quick gist without all the detail.
+   */
+  const speakShort = useCallback(() => {
+    if (!result) return;
+    const segMap = {};
+    for (const s of result.speech_segments || []) segMap[s.id] = s.text;
+    const parts = [
+      segMap["garments"],
+      segMap["overall_verdict"],
+      result.occasion_verdict,
+    ].filter(Boolean);
+    if (parts.length) speak(parts.join("  "));
+  }, [result, speak]);
+
+  /**
+   * Long description: full ordered breakdown — garments, color, fit, verdict,
+   * top fix, then occasion verdict.
+   */
+  const speakLong = useCallback(() => {
+    if (!result) return;
+    const parts = (result.speech_segments || []).map((s) => s.text);
+    if (result.occasion_verdict) parts.push(result.occasion_verdict);
+    if (parts.length) speak(parts.join("  "));
+  }, [result, speak]);
 
   // Voice command listener — placed after all callbacks to avoid TDZ in prod build
   useEffect(() => {
@@ -290,11 +306,11 @@ export default function ScanScreen() {
       const cmd = e.detail;
       if (cmd.type === "SAVE_ITEM" && phase === "result") handleSave();
       else if (cmd.type === "DISCARD_ITEM" && phase === "result") reset();
-      else if (cmd.type === "READ_RESULT" && phase === "result") speakResult();
+      else if (cmd.type === "READ_RESULT" && phase === "result") speakLong();
     };
     window.addEventListener("voiceCommand", handler);
     return () => window.removeEventListener("voiceCommand", handler);
-  }, [phase, handleSave, reset, speakResult]);
+  }, [phase, handleSave, reset, speakLong]);
 
   const handleUpload = useCallback((e) => {
     const file = e.target.files?.[0];
@@ -307,6 +323,46 @@ export default function ScanScreen() {
     };
     reader.readAsDataURL(file);
   }, [handleCapture]);
+
+  // ── Occasion Picker ────────────────────────────────────────────────────────
+  if (phase === "occasion") {
+    return (
+      <Screen title="What's the occasion?" subtitle="I'll judge your outfit for it.">
+        <LiveRegions />
+        <div style={{ marginBottom: 20 }}>
+          <ChoiceList
+            heading="Pick an occasion"
+            items={OCCASIONS}
+            selected={selectedOccasion}
+            onSelect={setSelectedOccasion}
+            announce={announce}
+          />
+        </div>
+        <BigButton
+          label="Scan Item"
+          hint={selectedOccasion
+            ? `Scan outfit for ${OCCASIONS.find(o => o.id === selectedOccasion)?.label}`
+            : "Select an occasion first, then tap to scan"}
+          icon="📸"
+          variant="primary"
+          disabled={!selectedOccasion}
+          onClick={() => {
+            const label = OCCASIONS.find(o => o.id === selectedOccasion)?.label || "";
+            speak(`Got it. Scanning for ${label}. Point the camera at your outfit.`);
+            setPhase("camera");
+          }}
+        />
+        <div style={{ marginTop: 12 }}>
+          <BigButton
+            label="Back"
+            hint="Go back to the main menu"
+            icon="←"
+            onClick={() => navigate(SCREENS.HOME)}
+          />
+        </div>
+      </Screen>
+    );
+  }
 
   // ── Camera ─────────────────────────────────────────────────────────────────
   if (phase === "camera") {
@@ -583,18 +639,25 @@ export default function ScanScreen() {
   }
 
   // ── Result ─────────────────────────────────────────────────────────────────
-  const occasions = result?.suitable_occasions ?? [];
-  const archetypes = result?.top_archetypes ?? [];
+  const occasionLabel = OCCASIONS.find(o => o.id === selectedOccasion)?.label || "";
+  const occasionVerdict = result?.occasion_verdict || "";
+
+  // Build a plain-text context string for the follow-up chatbot
+  const scanChatContext = result ? [
+    occasionLabel && `Occasion: ${occasionLabel}`,
+    ...(result.speech_segments || []).map((s) => s.text),
+    occasionVerdict && `Occasion verdict: ${occasionVerdict}`,
+  ].filter(Boolean).join("\n") : "";
 
   return (
-    <Screen title="Outfit Analysis" subtitle={occasions[0] || "Analysis complete"}>
+    <Screen title="Outfit Analysis" subtitle={occasionLabel || "Analysis complete"}>
       <LiveRegions />
 
       {/* Hidden heading receives focus to announce result to screen readers */}
       <h2
         ref={resultHeadingRef}
         tabIndex={-1}
-        aria-label={`Analysis complete. Works for: ${occasions.join(", ") || "various occasions"}.`}
+        aria-label={`Analysis complete${occasionLabel ? ` for ${occasionLabel}` : ""}.${occasionVerdict ? " " + occasionVerdict : ""}`}
         style={{ position: "absolute", left: -9999, top: "auto", width: 1, height: 1, overflow: "hidden" }}
       />
 
@@ -606,87 +669,64 @@ export default function ScanScreen() {
         />
       )}
 
-      {/* Occasions + Archetypes */}
-      {(occasions.length > 0 || archetypes.length > 0) && (
-        <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
-          {occasions.length > 0 && (
-            <div style={{
-              flex: 1, background: C.surface, borderRadius: 14, padding: "14px 16px",
-              border: `1px solid ${C.border}`,
-            }}>
-              <div style={{ fontFamily: FONT, fontSize: 11, color: C.muted, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 6 }}>
-                Works for
-              </div>
-              {occasions.map((occ) => (
-                <div key={occ} style={{ fontFamily: FONT, fontSize: 13, color: C.text, lineHeight: 1.6 }}>{occ}</div>
-              ))}
-            </div>
-          )}
-          {archetypes.length > 0 && (
-            <div style={{
-              flex: 1, background: C.surface, borderRadius: 14, padding: "14px 16px",
-              border: `1px solid ${C.border}`,
-            }}>
-              <div style={{ fontFamily: FONT, fontSize: 11, color: C.muted, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 6 }}>
-                Style
-              </div>
-              {archetypes.map((arch) => (
-                <div key={arch} style={{ fontFamily: FONT, fontSize: 13, color: C.text, lineHeight: 1.6 }}>{arch}</div>
-              ))}
-            </div>
-          )}
+      {/* Occasion verdict card */}
+      {occasionVerdict && (
+        <div style={{
+          background: C.surface, borderRadius: 14, padding: "16px 18px", marginBottom: 14,
+          border: `2px solid ${C.focus}`,
+        }}>
+          <div style={{ fontFamily: FONT, fontSize: 11, color: C.focus, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 6 }}>
+            {occasionLabel ? `${occasionLabel} verdict` : "Occasion verdict"}
+          </div>
+          <p style={{ fontFamily: FONT, fontSize: 15, color: C.text, lineHeight: 1.75, margin: 0 }}>
+            {occasionVerdict}
+          </p>
         </div>
       )}
 
-      {/* Speech-segment transcript */}
+      {/* Scrollable speech-segment transcript */}
       {result?.speech_segments?.length > 0 && (
         <div
-          aria-label={descriptionMode === "short" ? "Short outfit analysis summary" : "Full outfit analysis transcript"}
+          aria-label="Full outfit analysis transcript"
           style={{
             background: C.surface, borderRadius: 14, padding: 18,
             border: `1px solid ${C.border}`, marginBottom: 20,
             maxHeight: 220, overflowY: "auto",
           }}
         >
-          {descriptionMode === "short" ? (
-            <p style={{ fontFamily: FONT, fontSize: 15, color: C.text, lineHeight: 1.8, margin: 0 }}>
-              {getDescriptionText(result, "short")}
+          {result.speech_segments.map((seg) => (
+            <p key={seg.id} style={{
+              fontFamily: FONT, fontSize: 15, color: C.text, lineHeight: 1.8,
+              margin: "0 0 10px 0",
+            }}>
+              {seg.text}
             </p>
-          ) : (
-            result.speech_segments.map((seg) => (
-              <p key={seg.id} style={{
-                fontFamily: FONT, fontSize: 15, color: C.text, lineHeight: 1.8,
-                margin: "0 0 10px 0",
-              }}>
-                {seg.text}
-              </p>
-            ))
-          )}
+          ))}
         </div>
       )}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {/* Follow-up chatbot — anchored to this scan result */}
+      {scanChatContext && (
+        <ContextChat
+          context={scanChatContext}
+          feature="scan"
+          speak={speak}
+          announce={announce}
+        />
+      )}
+
+      <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 12 }}>
         <BigButton
-          label="Read Analysis Again"
-          hint="Hear the complete outfit analysis read aloud"
+          label="Short Description"
+          hint="Hear a quick summary: what you're wearing, the verdict, and whether it works for your occasion"
           icon="🔊"
-          onClick={speakResult}
+          onClick={speakShort}
         />
         <BigButton
-          label={descriptionMode === "short" ? "Switch to Long Description" : "Switch to Short Description"}
-          hint={descriptionMode === "short"
-            ? "Short summaries are on. Tap to switch to full descriptions."
-            : "Full descriptions are on. Tap to switch to short summaries."}
-          icon="📝"
-          onClick={() => {
-            toggleDescriptionMode();
-            const msg = descriptionMode === "short"
-              ? "Switched to long descriptions."
-              : "Switched to short descriptions.";
-            speak(msg);
-            announce(msg, "polite");
-            setTimeout(() => speak(getDescriptionText(result, descriptionMode === "short" ? "long" : "short")), 1200);
-          }}
+          label="Long Description"
+          hint="Hear the full breakdown: garments, colour feedback, fit, verdict, and top fix"
+          icon="📋"
+          onClick={speakLong}
         />
         <BigButton
           label="Save to Wardrobe"

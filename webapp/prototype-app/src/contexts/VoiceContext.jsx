@@ -1,30 +1,35 @@
-import { createContext, useContext, useCallback, useEffect } from "react";
+import { createContext, useContext, useCallback, useRef, useState } from "react";
 import useVoiceInput from "../hooks/useVoiceInput";
 import useSpeechOutput from "../hooks/useSpeechOutput";
 import { parseCommand } from "../voice/commandParser";
+import { askAssistant } from "../voice/voiceAssistant";
 import { useApp } from "./AppContext";
 import { useWardrobe } from "./WardrobeContext";
 import { RESPONSES } from "../voice/voiceResponses";
-import { playCommandRecognized } from "../utils/sounds";
 
 const VoiceContext = createContext();
 
 export function VoiceProvider({ children, announce, onScreenCommand }) {
-  const { navigate, goBack, descriptionMode, toggleDescriptionMode, setDescriptionMode } = useApp();
-  const { removeLast } = useWardrobe();
+  const { navigate, goBack, screen } = useApp();
+  const { removeLast, items } = useWardrobe();
   const { speak, stop, repeat, isSpeaking } = useSpeechOutput();
 
-  const handleVoiceResult = useCallback(async (transcript) => {
-    const command = parseCommand(transcript);
-    if (!command) return;
-    playCommandRecognized();
+  // Prevent concurrent assistant calls (debounce by flight)
+  const assistantInFlightRef = useRef(false);
+  const [isThinking, setIsThinking] = useState(false);
 
+  /**
+   * Execute a structured command object — shared between the fast-path parser
+   * and the LLM assistant so both code paths dispatch identically.
+   */
+  const executeCommand = useCallback((command) => {
     switch (command.type) {
       case "NAVIGATE":
-        // Destination screen announces itself — no TTS here to avoid overlap
+        speak(RESPONSES.goBack);
         navigate(command.screen);
         break;
       case "GO_BACK":
+        speak(RESPONSES.goBack);
         goBack();
         break;
       case "REPEAT":
@@ -34,24 +39,9 @@ export function VoiceProvider({ children, announce, onScreenCommand }) {
         stop();
         break;
       case "DELETE_LAST_ITEM": {
-        const last = await removeLast();
+        const last = removeLast();
         if (last) speak(RESPONSES.itemDeleted(last.name));
         else speak(RESPONSES.noItemToDelete);
-        break;
-      }
-      case "SET_DESC_MODE": {
-        setDescriptionMode(command.mode);
-        const msg = command.mode === "short" ? RESPONSES.shortDescOn : RESPONSES.longDescOn;
-        speak(msg);
-        if (announce) announce(msg, "polite");
-        break;
-      }
-      case "TOGGLE_DESC_MODE": {
-        toggleDescriptionMode();
-        const nextMode = descriptionMode === "short" ? "long" : "short";
-        const msg = nextMode === "short" ? RESPONSES.shortDescOn : RESPONSES.longDescOn;
-        speak(msg);
-        if (announce) announce(msg, "polite");
         break;
       }
       case "READ_WARDROBE":
@@ -71,28 +61,75 @@ export function VoiceProvider({ children, announce, onScreenCommand }) {
       default:
         break;
     }
-  }, [navigate, goBack, speak, stop, repeat, removeLast, onScreenCommand, descriptionMode, toggleDescriptionMode, setDescriptionMode, announce]);
+  }, [navigate, goBack, speak, stop, repeat, removeLast, onScreenCommand]);
 
-  const {
-    isListening, transcript, supported,
-    startListening, stopListening, pauseListening, resumeListening, toggleListening,
-  } = useVoiceInput({ onResult: handleVoiceResult });
+  /**
+   * Play a subtle two-tone "thinking" chime so the user knows
+   * the app heard them and is processing (covers the async wait).
+   */
+  const playThinkingChime = useCallback(() => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      [[440, 0], [520, 0.12]].forEach(([freq, delay]) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.12, ctx.currentTime + delay);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.18);
+        osc.start(ctx.currentTime + delay);
+        osc.stop(ctx.currentTime + delay + 0.18);
+      });
+    } catch (_) {}
+  }, []);
 
-  // Mute mic while TTS speaks — prevents the app from hearing its own voice output.
-  // Resume 400ms after speech ends to let the audio card fully clear.
-  useEffect(() => {
-    if (isSpeaking) {
-      pauseListening();
-    } else {
-      const timer = setTimeout(resumeListening, 400);
-      return () => clearTimeout(timer);
+  const handleVoiceResult = useCallback(async (transcript) => {
+    // Fast path — known command patterns
+    const command = parseCommand(transcript);
+    if (command) {
+      executeCommand(command);
+      return;
     }
-  }, [isSpeaking, pauseListening, resumeListening]);
+
+    // Don't fire two assistant calls at once
+    if (assistantInFlightRef.current) return;
+    assistantInFlightRef.current = true;
+
+    // Acknowledge immediately so the user knows we heard them
+    playThinkingChime();
+    setIsThinking(true);
+    if (announce) announce("Processing your question.", "polite");
+
+    try {
+      const { answer, command: llmCommand } = await askAssistant(transcript, screen, items);
+
+      // Speak the answer
+      if (answer) {
+        speak(answer);
+        if (announce) announce(answer, "polite");
+      }
+
+      // Execute any action the LLM identified
+      if (llmCommand && llmCommand.type) {
+        // Small delay so the spoken answer starts before navigation fires
+        setTimeout(() => executeCommand(llmCommand), 800);
+      }
+    } catch {
+      speak("I did not catch that. Try saying a command like 'my wardrobe' or 'scan clothing'.");
+    } finally {
+      assistantInFlightRef.current = false;
+      setIsThinking(false);
+    }
+  }, [screen, items, speak, announce, executeCommand, playThinkingChime]);
+
+  const { isListening, transcript, supported, startListening, stopListening, toggleListening } =
+    useVoiceInput({ onResult: handleVoiceResult });
 
   return (
     <VoiceContext.Provider value={{
       speak, stop, repeat, isSpeaking,
-      isListening, transcript, supported,
+      isListening, isThinking, transcript, supported,
       startListening, stopListening, toggleListening,
     }}>
       {children}

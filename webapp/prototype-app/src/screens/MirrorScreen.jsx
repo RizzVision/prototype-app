@@ -13,35 +13,14 @@ import Screen from "../components/Screen";
 import BigButton from "../components/BigButton";
 import CameraView from "../components/CameraView";
 import { useAnnounce } from "../components/LiveRegions";
-import { useApp } from "../contexts/AppContext";
 import { useVoice } from "../contexts/VoiceContext";
 import { analyzeOutfit, ImageQualityError } from "../services/rizzVisionApi";
 import { C, FONT } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
-import { playSuccess, playError } from "../utils/sounds";
+import ContextChat from "../components/ContextChat";
 
-function getDescriptionText(result, mode) {
-  if (!result?.speech_segments?.length) return "";
-  if (mode === "long") {
-    return result.speech_segments.map((s) => s.text).join("  ");
-  }
-  const score = Math.round((result.color_score ?? 0) * 100);
-  const label = result.color_label || "";
-  const occasion = result.best_occasion || "";
-  const archetype = result.style_archetype || "";
-  const line2Parts = [`Color harmony: ${score}% — ${label}.`];
-  if (occasion || archetype) line2Parts.push(`Best for ${occasion}${archetype ? `, ${archetype} style` : ""}.`);
-  return `${result.speech_segments[0].text}  ${line2Parts.join(" ")}`;
-}
-
-function scoreColor(score) {
-  if (score >= 0.65) return C.success;
-  if (score >= 0.45) return C.focus;
-  return C.danger;
-}
 
 export default function MirrorScreen() {
-  const { descriptionMode, toggleDescriptionMode } = useApp();
   const { speak } = useVoice();
   const { announce, LiveRegions } = useAnnounce();
 
@@ -52,11 +31,8 @@ export default function MirrorScreen() {
   const resultRef = useRef(null);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      speak(RESPONSES.mirrorReady);
-      announce(RESPONSES.mirrorReady, "polite");
-    }, 300);
-    return () => clearTimeout(timer);
+    speak(RESPONSES.mirrorReady);
+    announce(RESPONSES.mirrorReady, "polite");
   }, [speak, announce]);
 
   useEffect(() => {
@@ -71,14 +47,20 @@ export default function MirrorScreen() {
 
     try {
       const analysis = await analyzeOutfit(base64);
-      playSuccess();
       setResult(analysis);
       setPhase("result");
 
+      // Auto-speak the short description on arrival
       if (analysis.speech_segments?.length) {
-        const descText = getDescriptionText(analysis, descriptionMode);
-        announce(descText, "polite");
-        speak(descText);
+        const segMap = {};
+        for (const s of analysis.speech_segments) segMap[s.id] = s.text;
+        const shortParts = [
+          segMap["garments"],
+          segMap["overall_verdict"],
+        ].filter(Boolean);
+        const shortText = shortParts.join("  ");
+        announce(shortText, "polite");
+        speak(shortText);
       }
     } catch (err) {
       const msg =
@@ -87,7 +69,6 @@ export default function MirrorScreen() {
       setErrorMsg(msg);
       announce(msg, "assertive");
       speak(msg);
-      playError();
       setPhase("error");
     }
   }, [speak, announce]);
@@ -101,11 +82,22 @@ export default function MirrorScreen() {
     announce(RESPONSES.mirrorReady, "polite");
   }, [speak, announce]);
 
-  const speakResult = useCallback(() => {
-    if (result?.speech_segments?.length) {
-      speak(getDescriptionText(result, descriptionMode));
-    }
-  }, [result, speak, descriptionMode]);
+  const speakShort = useCallback(() => {
+    if (!result) return;
+    const segMap = {};
+    for (const s of result.speech_segments || []) segMap[s.id] = s.text;
+    const parts = [
+      segMap["garments"],
+      segMap["overall_verdict"],
+    ].filter(Boolean);
+    if (parts.length) speak(parts.join("  "));
+  }, [result, speak]);
+
+  const speakLong = useCallback(() => {
+    if (!result) return;
+    const parts = (result.speech_segments || []).map((s) => s.text);
+    if (parts.length) speak(parts.join("  "));
+  }, [result, speak]);
 
   // Voice command listener — placed after all callbacks to avoid TDZ in prod build
   useEffect(() => {
@@ -113,11 +105,11 @@ export default function MirrorScreen() {
       const cmd = e.detail;
       if (cmd.type === "SCAN_AGAIN") reset();
       else if (cmd.type === "SAVE_ITEM") speak("Mirror mode only gives instant feedback. To save items to your wardrobe, go back and use Scan Clothing instead.");
-      else if (cmd.type === "READ_RESULT" && phase === "result") speakResult();
+      else if (cmd.type === "READ_RESULT" && phase === "result") speakLong();
     };
     window.addEventListener("voiceCommand", handler);
     return () => window.removeEventListener("voiceCommand", handler);
-  }, [phase, reset, speak, speakResult]);
+  }, [phase, reset, speak, speakLong]);
 
   // ── Camera ─────────────────────────────────────────────────────────────────
   if (phase === "camera") {
@@ -151,6 +143,7 @@ export default function MirrorScreen() {
           </div>
           <CameraView
             onCapture={handleCapture}
+            onDescribe={(desc) => { announce(desc, "polite"); speak(desc); }}
             onError={(msg) => { announce(msg, "assertive"); speak(msg); }}
           />
         </div>
@@ -229,8 +222,9 @@ export default function MirrorScreen() {
   }
 
   // ── Result ─────────────────────────────────────────────────────────────────
-  const occasions = result?.suitable_occasions ?? [];
-  const archetypes = result?.top_archetypes ?? [];
+  const mirrorChatContext = result
+    ? (result.speech_segments || []).map((s) => s.text).join("\n")
+    : "";
 
   return (
     <Screen title="Auditory Mirror" subtitle="Instant feedback — not saved to wardrobe.">
@@ -239,7 +233,7 @@ export default function MirrorScreen() {
       <h2
         ref={resultRef}
         tabIndex={-1}
-        aria-label={`Analysis complete. Works for: ${occasions.join(", ") || "various occasions"}.`}
+        aria-label="Analysis complete."
         style={{ position: "absolute", left: -9999, top: "auto", width: 1, height: 1, overflow: "hidden" }}
       />
 
@@ -251,87 +245,49 @@ export default function MirrorScreen() {
         />
       )}
 
-      {/* Occasions + Archetypes */}
-      {(occasions.length > 0 || archetypes.length > 0) && (
-        <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
-          {occasions.length > 0 && (
-            <div style={{
-              flex: 1, background: C.surface, borderRadius: 14, padding: "14px 16px",
-              border: `1px solid ${C.border}`,
-            }}>
-              <div style={{ fontFamily: FONT, fontSize: 11, color: C.muted, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 6 }}>
-                Works for
-              </div>
-              {occasions.map((occ) => (
-                <div key={occ} style={{ fontFamily: FONT, fontSize: 13, color: C.text, lineHeight: 1.6 }}>{occ}</div>
-              ))}
-            </div>
-          )}
-          {archetypes.length > 0 && (
-            <div style={{
-              flex: 1, background: C.surface, borderRadius: 14, padding: "14px 16px",
-              border: `1px solid ${C.border}`,
-            }}>
-              <div style={{ fontFamily: FONT, fontSize: 11, color: C.muted, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 6 }}>
-                Style
-              </div>
-              {archetypes.map((arch) => (
-                <div key={arch} style={{ fontFamily: FONT, fontSize: 13, color: C.text, lineHeight: 1.6 }}>{arch}</div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Analysis transcript */}
+      {/* Full analysis transcript */}
       {result?.speech_segments?.length > 0 && (
         <div
-          aria-label={descriptionMode === "short" ? "Short outfit analysis summary" : "Full outfit analysis"}
+          aria-label="Full outfit analysis"
           style={{
             background: C.surface, borderRadius: 14, padding: 18,
             border: `1px solid ${C.border}`, marginBottom: 20,
             maxHeight: 240, overflowY: "auto",
           }}
         >
-          {descriptionMode === "short" ? (
-            <p style={{ fontFamily: FONT, fontSize: 15, color: C.text, lineHeight: 1.8, margin: 0 }}>
-              {getDescriptionText(result, "short")}
+          {result.speech_segments.map((seg) => (
+            <p key={seg.id} style={{
+              fontFamily: FONT, fontSize: 15, color: C.text, lineHeight: 1.8,
+              margin: "0 0 10px 0",
+            }}>
+              {seg.text}
             </p>
-          ) : (
-            result.speech_segments.map((seg) => (
-              <p key={seg.id} style={{
-                fontFamily: FONT, fontSize: 15, color: C.text, lineHeight: 1.8,
-                margin: "0 0 10px 0",
-              }}>
-                {seg.text}
-              </p>
-            ))
-          )}
+          ))}
         </div>
       )}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {/* Follow-up chatbot — anchored to this mirror result */}
+      {mirrorChatContext && (
+        <ContextChat
+          context={mirrorChatContext}
+          feature="mirror"
+          speak={speak}
+          announce={announce}
+        />
+      )}
+
+      <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 12 }}>
         <BigButton
-          label="Read Again"
-          hint="Hear the assessment read aloud again"
+          label="Short Description"
+          hint="Hear a quick summary: what you're wearing and the overall verdict"
           icon="🔊"
-          onClick={speakResult}
+          onClick={speakShort}
         />
         <BigButton
-          label={descriptionMode === "short" ? "Switch to Long Description" : "Switch to Short Description"}
-          hint={descriptionMode === "short"
-            ? "Short summaries are on. Tap to switch to full descriptions."
-            : "Full descriptions are on. Tap to switch to short summaries."}
-          icon="📝"
-          onClick={() => {
-            toggleDescriptionMode();
-            const msg = descriptionMode === "short"
-              ? "Switched to long descriptions."
-              : "Switched to short descriptions.";
-            speak(msg);
-            announce(msg, "polite");
-            setTimeout(() => speak(getDescriptionText(result, descriptionMode === "short" ? "long" : "short")), 1200);
-          }}
+          label="Long Description"
+          hint="Hear the full breakdown: garments, colour feedback, fit, verdict, and top fix"
+          icon="📋"
+          onClick={speakLong}
         />
         <BigButton
           label="Try Again"

@@ -40,40 +40,28 @@ export class ImageQualityError extends Error {
 /**
  * Analyze an outfit image with the full RizzVision pipeline.
  *
- * @param {string} base64 Raw base64 image string (no "data:image/..." prefix).
- * @param {object} [options]
- * @param {AbortSignal} [options.signal] Optional signal to cancel the request.
+ * @param {string} base64   Raw base64 image string (no "data:image/..." prefix).
+ * @param {string} occasion Optional occasion the user is dressing for.
  * @returns {Promise<AnalysisResult>} Full analysis including speech_segments,
- *   color_score, color_label, best_occasion, style_archetype, raw engine data.
+ *   occasion_verdict, skin_detected, raw engine data.
  *
  * @throws {ImageQualityError} When the backend rejects the image (422).
  *   Use .userMessage for a spoken sentence ready for TTS.
  * @throws {Error} For network errors or unexpected server failures.
  */
-export async function analyzeOutfit(base64, { signal } = {}) {
+export async function analyzeOutfit(base64, occasion = "") {
   const blob = base64ToBlob(base64);
   const formData = new FormData();
   formData.append("image", blob, "outfit.jpg");
-
-  // Combine caller signal with a 60 s timeout — ML pipeline can be slow on cold start
-  const timeout = AbortSignal.timeout(60_000);
-  const combinedSignal = signal
-    ? AbortSignal.any([signal, timeout])
-    : timeout;
+  if (occasion) formData.append("occasion", occasion);
 
   let res;
   try {
     res = await fetch(`${BASE_URL}/analyze`, {
       method: "POST",
       body: formData,
-      signal: combinedSignal,
     });
   } catch (networkErr) {
-    if (networkErr.name === "AbortError" || networkErr.name === "TimeoutError") {
-      throw new Error(
-        "Analysis is taking too long. Please check your connection and try again."
-      );
-    }
     throw new Error(
       "Could not reach the analysis server. Please check your connection and try again."
     );
@@ -112,11 +100,9 @@ export async function analyzeOutfit(base64, { signal } = {}) {
  *
  * @param {string} base64 Raw base64 image string.
  * @param {Array}  wardrobeItems Array of wardrobe item objects (may be empty).
- * @param {object} [options]
- * @param {AbortSignal} [options.signal] Optional signal to cancel the request.
  * @returns {Promise<ShoppingAnalysisResult>}
  */
-export async function analyzeForShopping(base64, wardrobeItems = [], { signal } = {}) {
+export async function analyzeForShopping(base64, wardrobeItems = []) {
   const blob = base64ToBlob(base64);
   const formData = new FormData();
   formData.append("image", blob, "outfit.jpg");
@@ -129,20 +115,13 @@ export async function analyzeForShopping(base64, wardrobeItems = [], { signal } 
     : "";
   formData.append("wardrobe", wardrobeSummary);
 
-  const timeout = AbortSignal.timeout(60_000);
-  const combinedSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
-
   let res;
   try {
     res = await fetch(`${BASE_URL}/shopping-analyze`, {
       method: "POST",
       body: formData,
-      signal: combinedSignal,
     });
-  } catch (networkErr) {
-    if (networkErr.name === "AbortError" || networkErr.name === "TimeoutError") {
-      throw new Error("Analysis is taking too long. Please check your connection and try again.");
-    }
+  } catch {
     throw new Error("Could not reach the analysis server. Please check your connection and try again.");
   }
 
@@ -180,6 +159,63 @@ export async function askShoppingFollowUp(question, lastAnalysisContext) {
   }
   if (res.ok) return await res.json();
   throw new Error(`Follow-up failed (${res.status}).`);
+}
+
+/**
+ * Feature-specific context chatbot — follow-up Q&A about a shown suggestion/result.
+ *
+ * @param {string} message   The user's question (text or voice transcript).
+ * @param {string} context   The suggestion/result text shown to the user.
+ * @param {string} feature   Which feature: "scan"|"mirror"|"outfit"|"shopping"|"wardrobe"
+ * @param {Array}  history   Prior turns: [{role:"user"|"assistant", text:string}]
+ * @returns {Promise<{answer: string}>}
+ */
+export async function askContextChat(message, context, feature, history = []) {
+  try {
+    const res = await fetch(`${BASE_URL}/context-chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, context, feature, history }),
+    });
+    if (!res.ok) throw new Error(`context-chat failed (${res.status})`);
+    return await res.json();
+  } catch {
+    return { answer: "I could not reach the server. Please check your connection." };
+  }
+}
+
+/**
+ * Identify a photographed garment against the user's saved wardrobe.
+ *
+ * @param {string} base64        Raw base64 image (no data URL prefix).
+ * @param {Array}  wardrobeItems Array of wardrobe item objects.
+ * @returns {Promise<{matched_id, matched_name, confidence, spoken}>}
+ */
+export async function identifyWardrobeItem(base64, wardrobeItems = []) {
+  const wardrobe = wardrobeItems.map((item) => ({
+    id: item.id,
+    name: item.name,
+    category: item.category || "",
+    colorDescription: item.colorDescription || item.color_description || "",
+    description: item.description || "",
+  }));
+
+  try {
+    const res = await fetch(`${BASE_URL}/identify-item`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image_base64: base64, wardrobe }),
+    });
+    if (!res.ok) throw new Error(`identify-item failed (${res.status})`);
+    return await res.json();
+  } catch {
+    return {
+      matched_id: null,
+      matched_name: null,
+      confidence: "none",
+      spoken: "Could not reach the server. Please check your connection.",
+    };
+  }
 }
 
 /**
