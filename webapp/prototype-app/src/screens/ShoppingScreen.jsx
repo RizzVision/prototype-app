@@ -16,6 +16,7 @@ import BigButton from "../components/BigButton";
 import CameraView from "../components/CameraView";
 import ContextChat from "../components/ContextChat";
 import { useAnnounce } from "../components/LiveRegions";
+import { useLocale } from "../contexts/LocaleContext";
 import { useVoice } from "../contexts/VoiceContext";
 import { useWardrobe } from "../contexts/WardrobeContext";
 import { analyzeForShopping, ImageQualityError } from "../services/rizzVisionApi";
@@ -23,6 +24,7 @@ import { C, FONT } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
 
 export default function ShoppingScreen() {
+  const { language } = useLocale();
   const { speak } = useVoice();
   const { announce, LiveRegions } = useAnnounce();
   const { items: wardrobeItems } = useWardrobe();
@@ -40,12 +42,11 @@ export default function ShoppingScreen() {
   const handleCapture = useCallback(async (base64) => {
     if (processing) return;
     setProcessing(true);
-    setFollowUpAnswer(null);
-    setFollowUpQuestion("");
 
     try {
-      const analysis = await analyzeForShopping(base64, wardrobeItems);
+      const analysis = await analyzeForShopping(base64, wardrobeItems, language);
       setResult(analysis);
+      setScanning(false);
 
       const segments = analysis.speech_segments ?? [];
       const summary = segments.map((s) => s.text).join("  ");
@@ -57,11 +58,15 @@ export default function ShoppingScreen() {
       if (err instanceof ImageQualityError) {
         announce(err.userMessage, "assertive");
         speak(err.userMessage);
+      } else {
+        const fallback = "I could not analyze this item right now. Please try again.";
+        announce(fallback, "assertive");
+        speak(fallback);
       }
     } finally {
       setProcessing(false);
     }
-  }, [processing, wardrobeItems, speak, announce]);
+  }, [processing, wardrobeItems, speak, announce, language]);
 
   const toggleScanning = useCallback(() => {
     setScanning((prev) => {

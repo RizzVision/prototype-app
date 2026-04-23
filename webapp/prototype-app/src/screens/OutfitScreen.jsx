@@ -3,6 +3,7 @@ import Screen from "../components/Screen";
 import BigButton from "../components/BigButton";
 import ChoiceList from "../components/ChoiceList";
 import ContextChat from "../components/ContextChat";
+import { useLocale } from "../contexts/LocaleContext";
 import { useApp } from "../contexts/AppContext";
 import { useVoice } from "../contexts/VoiceContext";
 import { useAnnounce } from "../components/LiveRegions";
@@ -12,6 +13,7 @@ import { OCCASIONS, SCREENS, C, FONT } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
 
 export default function OutfitScreen() {
+  const { language } = useLocale();
   const { navParams, navigate } = useApp();
   const { speak } = useVoice();
   const { announce, LiveRegions } = useAnnounce();
@@ -51,6 +53,7 @@ export default function OutfitScreen() {
         items,
         occasion: occasionLabel,
         anchorItem,
+        locale: language,
       });
       setResult(response);
       setPhase("result");
@@ -59,7 +62,7 @@ export default function OutfitScreen() {
       speak(RESPONSES.error);
       setPhase("occasion");
     }
-  }, [occasion, items, anchorItem, speak]);
+  }, [occasion, items, anchorItem, speak, language]);
 
   useEffect(() => {
     const handler = (e) => {

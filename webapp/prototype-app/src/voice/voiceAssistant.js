@@ -16,9 +16,10 @@ const BASE_URL = (import.meta.env.VITE_RIZZVISION_API_URL || "http://localhost:8
  * @param {string} transcript      What the user said (lowercased, trimmed).
  * @param {string} currentScreen   Current screen ID from SCREENS constants.
  * @param {Array}  wardrobeItems   Full wardrobe items array from WardrobeContext.
+ * @param {string} locale          User-selected locale code (for example: en, hi, ta).
  * @returns {Promise<{ answer: string, command: object|null }>}
  */
-export async function askAssistant(transcript, currentScreen, wardrobeItems = []) {
+export async function askAssistant(transcript, currentScreen, wardrobeItems = [], locale = "en") {
   const wardrobeSummary = wardrobeItems.length
     ? wardrobeItems
         .map((item) => `- ${item.name}${item.category ? ` (${item.category})` : ""}${item.description ? ": " + item.description.slice(0, 60) : ""}`)
@@ -31,6 +32,7 @@ export async function askAssistant(transcript, currentScreen, wardrobeItems = []
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         transcript,
+        locale,
         current_screen: currentScreen,
         wardrobe_summary: wardrobeSummary,
         wardrobe_count: wardrobeItems.length,

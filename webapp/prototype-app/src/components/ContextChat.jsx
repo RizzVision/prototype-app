@@ -15,6 +15,7 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { askContextChat } from "../services/rizzVisionApi";
+import { useLocale } from "../contexts/LocaleContext";
 import { C, FONT } from "../utils/constants";
 
 const PLACEHOLDERS = {
@@ -26,6 +27,7 @@ const PLACEHOLDERS = {
 };
 
 export default function ContextChat({ context, feature, speak, announce }) {
+  const { locale } = useLocale();
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [history, setHistory] = useState([]);  // [{role, text}]
@@ -56,7 +58,7 @@ export default function ContextChat({ context, feature, speak, announce }) {
     setLoading(true);
 
     try {
-      const { answer } = await askContextChat(q, context, feature, history);
+      const { answer } = await askContextChat(q, context, feature, nextHistory, locale.code);
       const assistantTurn = { role: "assistant", text: answer };
       setHistory([...nextHistory, assistantTurn]);
       speak(answer);
@@ -68,7 +70,7 @@ export default function ContextChat({ context, feature, speak, announce }) {
     } finally {
       setLoading(false);
     }
-  }, [history, context, feature, loading, speak, announce]);
+  }, [history, context, feature, loading, speak, announce, locale.code]);
 
   // ── Voice input ──────────────────────────────────────────────────────────────
   const startVoice = useCallback(() => {
@@ -78,7 +80,7 @@ export default function ContextChat({ context, feature, speak, announce }) {
       return;
     }
     const rec = new SR();
-    rec.lang = "en-IN";
+    rec.lang = locale.speechLocale;
     rec.interimResults = false;
     rec.maxAlternatives = 1;
 
@@ -96,7 +98,7 @@ export default function ContextChat({ context, feature, speak, announce }) {
     rec.start();
     setListening(true);
     speak("Listening. Ask your question.");
-  }, [speak, submit]);
+  }, [speak, submit, locale.speechLocale]);
 
   const stopVoice = useCallback(() => {
     recognitionRef.current?.stop();

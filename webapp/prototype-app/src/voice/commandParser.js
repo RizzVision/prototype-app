@@ -1,5 +1,52 @@
 import { SCREENS } from "../utils/constants";
 
+const LANGUAGE_ALIASES = {
+  en: ["english", "inglish"],
+  hi: ["hindi", "hindee"],
+  ta: ["tamil", "thamizh"],
+  te: ["telugu", "telgoo"],
+  bn: ["bengali", "bangla"],
+  mr: ["marathi"],
+  gu: ["gujarati", "gujrati"],
+  kn: ["kannada"],
+  ml: ["malayalam"],
+  pa: ["punjabi", "panjabi"],
+};
+
+function parseLanguageCommand(text) {
+  const wantsLanguageList = [
+    "what languages",
+    "available languages",
+    "which languages",
+    "list languages",
+    "supported languages",
+    "language options",
+  ].some((pattern) => text.includes(pattern));
+
+  if (wantsLanguageList) return { type: "LIST_LANGUAGES" };
+
+  const languagePrefixes = [
+    "change language to",
+    "switch language to",
+    "set language to",
+    "change to",
+    "switch to",
+    "speak in",
+    "language",
+  ];
+
+  const hasLanguageIntent = languagePrefixes.some((prefix) => text.includes(prefix));
+  if (!hasLanguageIntent) return null;
+
+  for (const [code, aliases] of Object.entries(LANGUAGE_ALIASES)) {
+    if (aliases.some((alias) => text.includes(alias))) {
+      return { type: "SET_LANGUAGE", code };
+    }
+  }
+
+  return { type: "SET_LANGUAGE", code: null };
+}
+
 /**
  * Fast-path command parser — covers all obvious, unambiguous intents.
  *
@@ -192,6 +239,10 @@ const COMMANDS = [
 
 export function parseCommand(transcript) {
   const text = transcript.toLowerCase().trim();
+
+  const languageCommand = parseLanguageCommand(text);
+  if (languageCommand) return languageCommand;
+
   for (const cmd of COMMANDS) {
     for (const pattern of cmd.patterns) {
       if (text.includes(pattern)) {

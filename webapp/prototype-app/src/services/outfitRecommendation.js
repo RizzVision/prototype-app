@@ -12,7 +12,7 @@ function formatWardrobe(items) {
   }).join("\n");
 }
 
-export async function getOutfitSuggestion({ items, occasion, anchorItem }) {
+export async function getOutfitSuggestion({ items, occasion, anchorItem, locale = "en" }) {
   const wardrobeDesc = formatWardrobe(items);
   const anchorLine = anchorItem
     ? `The user wants to build an outfit around: ${anchorItem.name}.`
@@ -21,7 +21,7 @@ export async function getOutfitSuggestion({ items, occasion, anchorItem }) {
   const res = await fetch(`${BASE_URL}/outfit-suggestion`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ occasion, wardrobe: wardrobeDesc, anchor: anchorLine }),
+    body: JSON.stringify({ occasion, wardrobe: wardrobeDesc, anchor: anchorLine, locale }),
   });
 
   if (!res.ok) throw new Error("Could not get outfit suggestion. Please try again.");

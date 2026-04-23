@@ -1,18 +1,24 @@
-import { createContext, useContext, useCallback, useRef, useState } from "react";
+import { createContext, useContext, useCallback, useRef, useState, useEffect } from "react";
 import useVoiceInput from "../hooks/useVoiceInput";
 import useSpeechOutput from "../hooks/useSpeechOutput";
+import { useLocale } from "./LocaleContext";
 import { parseCommand } from "../voice/commandParser";
 import { askAssistant } from "../voice/voiceAssistant";
 import { useApp } from "./AppContext";
 import { useWardrobe } from "./WardrobeContext";
-import { RESPONSES } from "../voice/voiceResponses";
+import { RESPONSES, setResponseLanguage } from "../voice/voiceResponses";
 
 const VoiceContext = createContext();
 
 export function VoiceProvider({ children, announce, onScreenCommand }) {
+  const { language, locale, locales, setLanguage, t } = useLocale();
   const { navigate, goBack, screen } = useApp();
   const { removeLast, items } = useWardrobe();
-  const { speak, stop, repeat, isSpeaking } = useSpeechOutput();
+  const { speak, stop, repeat, isSpeaking } = useSpeechOutput({ speechLocale: locale.speechLocale });
+
+  useEffect(() => {
+    setResponseLanguage(language);
+  }, [language]);
 
   // Prevent concurrent assistant calls (debounce by flight)
   const assistantInFlightRef = useRef(false);
@@ -44,6 +50,29 @@ export function VoiceProvider({ children, announce, onScreenCommand }) {
         else speak(RESPONSES.noItemToDelete);
         break;
       }
+      case "SET_LANGUAGE": {
+        if (!command.code) {
+          speak(t("app.languageUnknown"));
+          break;
+        }
+
+        const target = locales.find((item) => item.code === command.code);
+        if (!target) {
+          speak(t("app.languageUnknown"));
+          break;
+        }
+
+        setLanguage(command.code);
+        const confirmation = `${t("app.languageChangedPrefix")} ${target.nativeLabel}.`;
+        speak(confirmation);
+        if (announce) announce(confirmation, "polite");
+        break;
+      }
+      case "LIST_LANGUAGES": {
+        const spokenList = locales.map((item) => item.nativeLabel).join(", ");
+        speak(`${t("app.languagesAvailablePrefix")} ${spokenList}.`);
+        break;
+      }
       case "READ_WARDROBE":
       case "FILTER_WARDROBE":
       case "SAVE_ITEM":
@@ -61,7 +90,7 @@ export function VoiceProvider({ children, announce, onScreenCommand }) {
       default:
         break;
     }
-  }, [navigate, goBack, speak, stop, repeat, removeLast, onScreenCommand]);
+  }, [navigate, goBack, speak, stop, repeat, removeLast, onScreenCommand, locales, setLanguage, t, announce]);
 
   /**
    * Play a subtle two-tone "thinking" chime so the user knows
@@ -99,10 +128,10 @@ export function VoiceProvider({ children, announce, onScreenCommand }) {
     // Acknowledge immediately so the user knows we heard them
     playThinkingChime();
     setIsThinking(true);
-    if (announce) announce("Processing your question.", "polite");
+    if (announce) announce(t("app.processingQuestion"), "polite");
 
     try {
-      const { answer, command: llmCommand } = await askAssistant(transcript, screen, items);
+      const { answer, command: llmCommand } = await askAssistant(transcript, screen, items, language);
 
       // Speak the answer
       if (answer) {
@@ -116,15 +145,15 @@ export function VoiceProvider({ children, announce, onScreenCommand }) {
         setTimeout(() => executeCommand(llmCommand), 800);
       }
     } catch {
-      speak("I did not catch that. Try saying a command like 'my wardrobe' or 'scan clothing'.");
+      speak(t("app.fallbackVoiceError"));
     } finally {
       assistantInFlightRef.current = false;
       setIsThinking(false);
     }
-  }, [screen, items, speak, announce, executeCommand, playThinkingChime]);
+  }, [screen, items, speak, announce, executeCommand, playThinkingChime, t, language]);
 
   const { isListening, transcript, supported, startListening, stopListening, toggleListening } =
-    useVoiceInput({ onResult: handleVoiceResult });
+    useVoiceInput({ onResult: handleVoiceResult, lang: locale.speechLocale });
 
   return (
     <VoiceContext.Provider value={{

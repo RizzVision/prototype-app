@@ -6,6 +6,7 @@ import { WardrobeProvider } from "./contexts/WardrobeContext";
 import { VoiceProvider, useVoice } from "./contexts/VoiceContext";
 import { useAnnounce } from "./components/LiveRegions";
 import VoiceStatus from "./components/VoiceStatus";
+import { useLocale } from "./contexts/LocaleContext";
 import AuthScreen from "./screens/AuthScreen";
 import AuthCallbackScreen from "./screens/AuthCallbackScreen";
 import HomeScreen from "./screens/HomeScreen";
@@ -20,16 +21,21 @@ import { SCREENS, C, FONT } from "./utils/constants";
 import { playNav } from "./utils/sounds";
 import { stopSpeech } from "./hooks/useSpeechOutput";
 
-const SCREEN_TITLES = {
-  [SCREENS.HOME]:      "Home",
-  [SCREENS.SCAN]:      "Scan Clothing",
-  [SCREENS.WARDROBE]:  "My Wardrobe",
-  [SCREENS.OUTFIT]:    "Outfit Help",
-  [SCREENS.SHOPPING]:  "Shopping Mode",
-  [SCREENS.MIRROR]:    "Mirror",
-  [SCREENS.EDIT_ITEM]: "Edit Item",
-  [SCREENS.IDENTIFY]:  "Identify Garment",
-};
+function getScreenTitle(screen, t) {
+  const map = {
+    [SCREENS.HOME]: "app.screenTitles.home",
+    [SCREENS.SCAN]: "app.screenTitles.scan",
+    [SCREENS.WARDROBE]: "app.screenTitles.wardrobe",
+    [SCREENS.OUTFIT]: "app.screenTitles.outfit",
+    [SCREENS.SHOPPING]: "app.screenTitles.shopping",
+    [SCREENS.MIRROR]: "app.screenTitles.mirror",
+    [SCREENS.EDIT_ITEM]: "app.screenTitles.editItem",
+    [SCREENS.IDENTIFY]: "app.screenTitles.identify",
+  };
+
+  const key = map[screen];
+  return key ? t(key) : t("app.appName");
+}
 
 function ScreenRouter() {
   const { screen } = useApp();
@@ -53,6 +59,7 @@ function StatusIndicator() {
 }
 
 function BackButton() {
+  const { t } = useLocale();
   const { screen, canGoBack, goBack } = useApp();
   const isFullScreen = screen === SCREENS.SCAN || screen === SCREENS.SHOPPING || screen === SCREENS.MIRROR || screen === SCREENS.IDENTIFY;
 
@@ -62,7 +69,7 @@ function BackButton() {
     return (
       <button
         onClick={goBack}
-        aria-label="Go back to previous screen"
+        aria-label={t("app.goBackAria")}
         style={{
           position: "absolute", top: 16, left: 16, zIndex: 50,
           background: "rgba(0,0,0,0.6)",
@@ -77,7 +84,7 @@ function BackButton() {
           display: "flex", alignItems: "center", gap: 8,
         }}
       >
-        <span aria-hidden>←</span> Back
+        <span aria-hidden>←</span> {t("app.back")}
       </button>
     );
   }
@@ -86,7 +93,7 @@ function BackButton() {
     <div style={{ padding: "12px 20px 0", flexShrink: 0 }}>
       <button
         onClick={goBack}
-        aria-label="Go back to previous screen"
+        aria-label={t("app.goBackAria")}
         style={{
           background: "transparent",
           border: `2px solid ${C.border}`,
@@ -100,13 +107,14 @@ function BackButton() {
           display: "flex", alignItems: "center", gap: 8,
         }}
       >
-        <span aria-hidden>←</span> Back
+        <span aria-hidden>←</span> {t("app.back")}
       </button>
     </div>
   );
 }
 
 function SkipLink() {
+  const { t } = useLocale();
   const [focused, setFocused] = useState(false);
   return (
     <a
@@ -128,20 +136,21 @@ function SkipLink() {
         display: "block",
       }}
     >
-      Skip to main content
+      {t("app.skipToMain")}
     </a>
   );
 }
 
 function AppShell() {
+  const { t } = useLocale();
   const { announce, LiveRegions } = useAnnounce();
   const { screen } = useApp();
   const isFirstRender = useRef(true);
 
   // On every screen change: stop ongoing speech, update title, announce screen, move focus
   useEffect(() => {
-    const label = SCREEN_TITLES[screen] ?? "Rizzvision";
-    document.title = `${label} — Rizzvision`;
+    const label = getScreenTitle(screen, t);
+    document.title = `${label} - ${t("app.appName")}`;
     stopSpeech();
     if (isFirstRender.current) {
       isFirstRender.current = false;
@@ -154,7 +163,7 @@ function AppShell() {
       document.getElementById("main")?.focus();
     }, 100);
     return () => clearTimeout(id);
-  }, [screen, announce]);
+  }, [screen, announce, t]);
 
   const handleScreenCommand = useCallback((cmd) => {
     window.dispatchEvent(new CustomEvent("voiceCommand", { detail: cmd }));
@@ -180,6 +189,7 @@ function AppShell() {
 }
 
 function AuthGate() {
+  const { t } = useLocale();
   const { user, loading } = useAuth();
 
   if (loading) {
@@ -191,7 +201,7 @@ function AuthGate() {
         alignItems: "center", justifyContent: "center",
         fontFamily: FONT,
       }}>
-        <div role="status" aria-label="Loading, please wait">
+        <div role="status" aria-label={t("app.loadingAria")}>
           <div
             aria-hidden="true"
             style={{

@@ -13,6 +13,7 @@ import Screen from "../components/Screen";
 import BigButton from "../components/BigButton";
 import CameraView from "../components/CameraView";
 import { useAnnounce } from "../components/LiveRegions";
+import { useLocale } from "../contexts/LocaleContext";
 import { useVoice } from "../contexts/VoiceContext";
 import { analyzeOutfit, ImageQualityError } from "../services/rizzVisionApi";
 import { C, FONT } from "../utils/constants";
@@ -21,6 +22,7 @@ import ContextChat from "../components/ContextChat";
 
 
 export default function MirrorScreen() {
+  const { language } = useLocale();
   const { speak } = useVoice();
   const { announce, LiveRegions } = useAnnounce();
 
@@ -46,7 +48,7 @@ export default function MirrorScreen() {
     speak(RESPONSES.mirrorAnalyzing);
 
     try {
-      const analysis = await analyzeOutfit(base64);
+      const analysis = await analyzeOutfit(base64, "", language);
       setResult(analysis);
       setPhase("result");
 
@@ -71,7 +73,7 @@ export default function MirrorScreen() {
       speak(msg);
       setPhase("error");
     }
-  }, [speak, announce]);
+  }, [speak, announce, language]);
 
   const reset = useCallback(() => {
     setPhase("camera");

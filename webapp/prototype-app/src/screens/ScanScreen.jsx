@@ -18,6 +18,7 @@ import CameraView from "../components/CameraView";
 import { useAnnounce } from "../components/LiveRegions";
 import { useApp } from "../contexts/AppContext";
 import { useVoice } from "../contexts/VoiceContext";
+import { useLocale } from "../contexts/LocaleContext";
 import { useWardrobe } from "../contexts/WardrobeContext";
 import { analyzeOutfit, ImageQualityError } from "../services/rizzVisionApi";
 import { SCREENS, OCCASIONS, C, FONT } from "../utils/constants";
@@ -60,6 +61,7 @@ function inferCategory(label) {
 export default function ScanScreen() {
   const { navigate } = useApp();
   const { speak } = useVoice();
+  const { language } = useLocale();
   const { addItem, items: wardrobeItems } = useWardrobe();
   const { announce, LiveRegions } = useAnnounce();
 
@@ -139,7 +141,7 @@ export default function ScanScreen() {
 
     try {
       const occasionLabel = OCCASIONS.find(o => o.id === selectedOccasion)?.label || "";
-      const analysis = await analyzeOutfit(base64, occasionLabel);
+      const analysis = await analyzeOutfit(base64, occasionLabel, language);
       const garments = analysis.raw?.garment_details || [];
 
       // If multiple garments detected, reject and ask user to scan one at a time
@@ -178,7 +180,7 @@ export default function ScanScreen() {
       speak(msg);
       setPhase("error");
     }
-  }, [speak, announce]);
+  }, [speak, announce, language]);
 
   const doSave = useCallback(async (namesOverride) => {
     if (!result) return;

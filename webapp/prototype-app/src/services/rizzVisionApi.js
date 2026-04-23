@@ -49,11 +49,12 @@ export class ImageQualityError extends Error {
  *   Use .userMessage for a spoken sentence ready for TTS.
  * @throws {Error} For network errors or unexpected server failures.
  */
-export async function analyzeOutfit(base64, occasion = "") {
+export async function analyzeOutfit(base64, occasion = "", locale = "en") {
   const blob = base64ToBlob(base64);
   const formData = new FormData();
   formData.append("image", blob, "outfit.jpg");
   if (occasion) formData.append("occasion", occasion);
+  formData.append("locale", locale);
 
   let res;
   try {
@@ -102,15 +103,20 @@ export async function analyzeOutfit(base64, occasion = "") {
  * @param {Array}  wardrobeItems Array of wardrobe item objects (may be empty).
  * @returns {Promise<ShoppingAnalysisResult>}
  */
-export async function analyzeForShopping(base64, wardrobeItems = []) {
+export async function analyzeForShopping(base64, wardrobeItems = [], locale = "en") {
   const blob = base64ToBlob(base64);
   const formData = new FormData();
   formData.append("image", blob, "outfit.jpg");
+  formData.append("locale", locale);
 
   // Summarise wardrobe into a readable text block for the LLM
   const wardrobeSummary = wardrobeItems.length
     ? wardrobeItems
-        .map((item) => `- ${item.name || item.type}: ${item.color || ""} ${item.description || ""}`.trim())
+        .map((item) => {
+          const desc = item.colorDescription || item.color || "";
+          const extra = item.description ? ` — ${item.description}` : "";
+          return `- ${item.name || item.type} (${item.category || "clothing"}): ${desc}${extra}`.trim();
+        })
         .join("\n")
     : "";
   formData.append("wardrobe", wardrobeSummary);
@@ -146,13 +152,13 @@ export async function analyzeForShopping(base64, wardrobeItems = []) {
  * @param {string} lastAnalysisContext Context string returned by analyzeForShopping.
  * @returns {Promise<{answer: string}>}
  */
-export async function askShoppingFollowUp(question, lastAnalysisContext) {
+export async function askShoppingFollowUp(question, lastAnalysisContext, locale = "en") {
   let res;
   try {
     res = await fetch(`${BASE_URL}/shopping-followup`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question, last_analysis_context: lastAnalysisContext }),
+      body: JSON.stringify({ question, last_analysis_context: lastAnalysisContext, locale }),
     });
   } catch {
     throw new Error("Could not reach the analysis server.");
@@ -170,12 +176,12 @@ export async function askShoppingFollowUp(question, lastAnalysisContext) {
  * @param {Array}  history   Prior turns: [{role:"user"|"assistant", text:string}]
  * @returns {Promise<{answer: string}>}
  */
-export async function askContextChat(message, context, feature, history = []) {
+export async function askContextChat(message, context, feature, history = [], locale = "en") {
   try {
     const res = await fetch(`${BASE_URL}/context-chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, context, feature, history }),
+      body: JSON.stringify({ message, context, feature, history, locale }),
     });
     if (!res.ok) throw new Error(`context-chat failed (${res.status})`);
     return await res.json();
@@ -191,7 +197,7 @@ export async function askContextChat(message, context, feature, history = []) {
  * @param {Array}  wardrobeItems Array of wardrobe item objects.
  * @returns {Promise<{matched_id, matched_name, confidence, spoken}>}
  */
-export async function identifyWardrobeItem(base64, wardrobeItems = []) {
+export async function identifyWardrobeItem(base64, wardrobeItems = [], locale = "en") {
   const wardrobe = wardrobeItems.map((item) => ({
     id: item.id,
     name: item.name,
@@ -204,7 +210,7 @@ export async function identifyWardrobeItem(base64, wardrobeItems = []) {
     const res = await fetch(`${BASE_URL}/identify-item`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ image_base64: base64, wardrobe }),
+      body: JSON.stringify({ image_base64: base64, wardrobe, locale }),
     });
     if (!res.ok) throw new Error(`identify-item failed (${res.status})`);
     return await res.json();

@@ -16,6 +16,7 @@ import Screen from "../components/Screen";
 import BigButton from "../components/BigButton";
 import CameraView from "../components/CameraView";
 import { useAnnounce } from "../components/LiveRegions";
+import { useLocale } from "../contexts/LocaleContext";
 import { useVoice } from "../contexts/VoiceContext";
 import { useWardrobe } from "../contexts/WardrobeContext";
 import { useApp } from "../contexts/AppContext";
@@ -37,6 +38,7 @@ const CONFIDENCE_LABEL = {
 };
 
 export default function IdentifyScreen() {
+  const { language } = useLocale();
   const { speak } = useVoice();
   const { announce, LiveRegions } = useAnnounce();
   const { items: wardrobeItems } = useWardrobe();
@@ -71,12 +73,12 @@ export default function IdentifyScreen() {
     speak(msg);
     announce(msg, "polite");
 
-    const res = await identifyWardrobeItem(base64, wardrobeItems);
+    const res = await identifyWardrobeItem(base64, wardrobeItems, language);
     setResult(res);
     setPhase("result");
     speak(res.spoken);
     announce(res.spoken, "polite");
-  }, [wardrobeItems, speak, announce]);
+  }, [wardrobeItems, speak, announce, language]);
 
   const handleDescribe = useCallback((desc) => {
     speak(desc);
