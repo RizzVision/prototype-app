@@ -186,5 +186,9 @@ class SegmentationModel:
 
         logger.info("Clothing presence confirmed")
 
+    def verify_clothing_for_shopping(self, img: Image.Image) -> None:
+        """CLIP-only gate for shopping mode — hangers and flat items fail the SegFormer pixel check."""
+        _verify_clothing_with_clip(img)
+
 
 segmentation_model = SegmentationModel()

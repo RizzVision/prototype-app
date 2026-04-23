@@ -77,6 +77,7 @@ async def analyze_outfit(
 async def shopping_analyze(
     image: UploadFile = File(...),
     wardrobe: str = "",
+    locale: str = Form("en"),
 ):
     """
     Shopping mode: analyse the item in frame and compare it against the user's wardrobe.
@@ -99,7 +100,7 @@ async def shopping_analyze(
     raw_bytes = await image.read()
     img = ingest_image(raw_bytes)
     check_image_quality(img)
-    segmentation_model.verify_clothing(img)
+    segmentation_model.verify_clothing_for_shopping(img)
 
     has_wardrobe = bool(wardrobe and wardrobe.strip() and wardrobe.strip() != "[]")
 
@@ -122,6 +123,7 @@ async def shopping_analyze(
     prompt = f"""You are RizzVision in shopping mode, speaking to a visually impaired user.
 Your response is read aloud. Every sentence must be under 15 words. No markdown. No lists.
 Use concrete, tactile language. Never say "looks good" — say WHY.
+Respond in the language with ISO code: {locale}.
 
 {wardrobe_section}
 
@@ -129,12 +131,16 @@ Task:
 1. Briefly describe what you see (1-2 sentences, garment and colour).
 2. {match_instruction}
 3. One sentence on whether this is worth buying for their style.
+4. List 2-3 occasions this item suits (e.g. casual, work, wedding).
+5. Name 1-2 style archetypes this item fits (e.g. classic, bohemian, minimalist).
 
 Return ONLY valid JSON:
 {{
   "item_description": "string",
   "wardrobe_match": "string",
-  "buy_verdict": "string"
+  "buy_verdict": "string",
+  "suitable_occasions": ["string"],
+  "top_archetypes": ["string"]
 }}"""
 
     img_bytes_io = _io.BytesIO()
@@ -160,6 +166,8 @@ Return ONLY valid JSON:
             "item_description": "I can see a clothing item in frame.",
             "wardrobe_match": "Unable to assess wardrobe compatibility right now.",
             "buy_verdict": "Try again for a full assessment.",
+            "suitable_occasions": [],
+            "top_archetypes": [],
         }
 
     speech_segments = []
@@ -181,6 +189,8 @@ Return ONLY valid JSON:
         "has_wardrobe": has_wardrobe,
         "analysis_context": analysis_context,
         "latency_ms": latency_ms,
+        "suitable_occasions": data.get("suitable_occasions") or [],
+        "top_archetypes": data.get("top_archetypes") or [],
     }
 
 
