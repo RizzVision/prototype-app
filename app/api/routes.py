@@ -11,7 +11,7 @@ All analysis is LLM-driven. The pipeline is:
 import logging
 import time
 
-from fastapi import APIRouter, UploadFile, File
+from fastapi import APIRouter, UploadFile, File, Form
 from pydantic import BaseModel
 
 from app.errors.handlers import ERROR_MESSAGES
