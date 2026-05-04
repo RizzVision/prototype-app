@@ -10,7 +10,7 @@
  * Adding items to the wardrobe is intentionally disabled in this mode.
  */
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import Screen from "../components/Screen";
 import BigButton from "../components/BigButton";
 import CameraView from "../components/CameraView";
@@ -19,7 +19,7 @@ import { useAnnounce } from "../components/LiveRegions";
 import { useLocale } from "../contexts/LocaleContext";
 import { useVoice } from "../contexts/VoiceContext";
 import { useWardrobe } from "../contexts/WardrobeContext";
-import { analyzeForShopping, ImageQualityError } from "../services/rizzVisionApi";
+import { analyzeForShopping, quickCompatibility, ImageQualityError } from "../services/rizzVisionApi";
 import { C, FONT } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
 
@@ -32,6 +32,12 @@ export default function ShoppingScreen() {
   const [scanning, setScanning] = useState(true);
   const [result, setResult] = useState(null);
   const [processing, setProcessing] = useState(false);
+  const [detecting, setDetecting] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [quickResult, setQuickResult] = useState(null);
+  const lastCaptureRef = useRef(0);
+  const captureRefInternal = useRef(null);
+  const DEBOUNCE_MS = 2500;
 
   useEffect(() => {
     const msg = RESPONSES.shoppingStart;
@@ -44,27 +50,43 @@ export default function ShoppingScreen() {
     setProcessing(true);
 
     try {
-      const analysis = await analyzeForShopping(base64, wardrobeItems, language);
-      setResult(analysis);
-      setScanning(false);
+      lastCaptureRef.current = Date.now();
+      setDetecting(false);
+      setDetailsOpen(false);
+      setQuickResult(null);
 
-      const segments = analysis.speech_segments ?? [];
-      const summary = segments.map((s) => s.text).join("  ");
-      if (summary) {
-        announce(summary, "polite");
-        speak(summary);
+      const [quickSettled, fullSettled] = await Promise.allSettled([
+        quickCompatibility(base64, wardrobeItems, language),
+        analyzeForShopping(base64, wardrobeItems, language),
+      ]);
+
+      if (quickSettled.status === "fulfilled") {
+        setQuickResult(quickSettled.value);
+        speak(quickSettled.value.reason);
+        announce(quickSettled.value.reason, "polite");
       }
-    } catch (err) {
-      if (err instanceof ImageQualityError) {
-        announce(err.userMessage, "assertive");
-        speak(err.userMessage);
-      } else {
+
+      if (fullSettled.status === "fulfilled") {
+        const analysis = fullSettled.value;
+        setResult(analysis);
+        setScanning(false);
+        setQuickResult(null);
+        const summary = (analysis.speech_segments ?? []).map((s) => s.text).join("  ");
+        if (summary) {
+          announce(summary, "polite");
+          speak(summary);
+        }
+      } else if (fullSettled.reason instanceof ImageQualityError) {
+        announce(fullSettled.reason.userMessage, "assertive");
+        speak(fullSettled.reason.userMessage);
+      } else if (quickSettled.status === "rejected") {
         const fallback = "I could not analyze this item right now. Please try again.";
         announce(fallback, "assertive");
         speak(fallback);
       }
     } finally {
       setProcessing(false);
+      setDetecting(false);
     }
   }, [processing, wardrobeItems, speak, announce, language]);
 
@@ -83,6 +105,18 @@ export default function ShoppingScreen() {
       speak(result.speech_segments.map((s) => s.text).join("  "));
     }
   }, [result, speak]);
+
+  const handleDescribe = useCallback((desc) => {
+    announce(desc, "polite");
+    speak(desc);
+
+    if (desc !== RESPONSES.whatsInFocus.ready) return;
+    if (processing) return;
+    if (Date.now() - lastCaptureRef.current < DEBOUNCE_MS) return;
+
+    setDetecting(true);
+    captureRefInternal.current?.();
+  }, [announce, speak, processing]);
 
   // Voice commands
   useEffect(() => {
@@ -108,9 +142,10 @@ export default function ShoppingScreen() {
           {scanning ? (
             <CameraView
               onCapture={handleCapture}
-              onDescribe={(desc) => { announce(desc, "polite"); speak(desc); }}
+              onDescribe={handleDescribe}
+              captureRef={captureRefInternal}
               autoCapture={true}
-              captureInterval={8000}
+              captureInterval={5000}
               onError={(msg) => { announce(msg, "assertive"); speak(msg); }}
             />
           ) : (
@@ -126,7 +161,43 @@ export default function ShoppingScreen() {
             </div>
           )}
 
-          {processing && (
+          {(detecting || quickResult) && !result && (
+            <div
+              aria-live="polite"
+              style={{
+                position: "absolute", top: 12, left: 12,
+                background: "rgba(0,0,0,0.85)", borderRadius: 12, padding: "8px 14px",
+                border: `1px solid ${
+                  quickResult?.verdict === "works" ? C.success
+                  : quickResult?.verdict === "clashes" ? C.danger
+                  : quickResult ? C.focus : "transparent"
+                }`,
+              }}
+            >
+              {quickResult ? (
+                <>
+                  <div style={{ fontFamily: FONT, fontSize: 10, color:
+                    quickResult.verdict === "works" ? C.success
+                    : quickResult.verdict === "clashes" ? C.danger : C.focus,
+                    textTransform: "uppercase", letterSpacing: "0.2em", marginBottom: 3,
+                  }}>
+                    {quickResult.verdict === "works" ? "Works with wardrobe"
+                      : quickResult.verdict === "clashes" ? "Might clash"
+                      : "Style tip"}
+                  </div>
+                  <span style={{ fontFamily: FONT, fontSize: 13, color: C.text }}>
+                    {quickResult.reason}
+                  </span>
+                </>
+              ) : (
+                <span style={{ fontFamily: FONT, fontSize: 13, color: C.success }}>
+                  Clothing detected — checking wardrobe…
+                </span>
+              )}
+            </div>
+          )}
+
+          {processing && !quickResult && (
             <div
               aria-hidden="true"
               style={{
@@ -215,20 +286,57 @@ export default function ShoppingScreen() {
                 </div>
               )}
 
-              {/* Speech segments */}
-              {result.speech_segments?.map((seg) => (
-                <div key={seg.id} style={{
-                  background: C.surface, borderRadius: 12, padding: 14,
-                  border: `1px solid ${C.border}`, marginBottom: 10,
-                }}>
-                  <div style={{ fontFamily: FONT, fontSize: 10, color: C.focus, textTransform: "uppercase", letterSpacing: "0.2em", marginBottom: 6 }}>
-                    {seg.id === "item" ? "Item" : seg.id === "match" ? (emptyWardrobe ? "Style Advice" : "Wardrobe Match") : "Verdict"}
-                  </div>
-                  <p style={{ fontFamily: FONT, fontSize: 15, color: C.text, lineHeight: 1.7, margin: 0 }}>
-                    {seg.text}
-                  </p>
-                </div>
-              ))}
+              {/* Speech segments — verdict prominent, details expandable */}
+              {(() => {
+                const verdictSeg = result.speech_segments?.find((s) => s.id === "verdict");
+                const detailSegs = result.speech_segments?.filter((s) => s.id !== "verdict") ?? [];
+                const verdictColor = verdictSeg?.text.match(/worth|works|great/i) ? C.success
+                  : verdictSeg?.text.match(/clash|avoid|not worth/i) ? C.danger : C.focus;
+                return (
+                  <>
+                    {verdictSeg && (
+                      <div style={{
+                        background: C.surface, borderRadius: 14, padding: "12px 16px",
+                        border: `2px solid ${verdictColor}`, marginBottom: 12,
+                      }}>
+                        <div style={{ fontFamily: FONT, fontSize: 10, color: verdictColor, textTransform: "uppercase", letterSpacing: "0.2em", marginBottom: 4 }}>
+                          Verdict
+                        </div>
+                        <p style={{ fontFamily: FONT, fontSize: 16, color: C.text, lineHeight: 1.6, margin: 0 }}>
+                          {verdictSeg.text}
+                        </p>
+                      </div>
+                    )}
+                    {detailSegs.length > 0 && (
+                      <>
+                        <button
+                          onClick={() => setDetailsOpen((o) => !o)}
+                          style={{
+                            fontFamily: FONT, fontSize: 13, color: C.focus,
+                            background: "none", border: "none", cursor: "pointer",
+                            marginBottom: 8, padding: 0,
+                          }}
+                        >
+                          {detailsOpen ? "Hide details ▲" : "Show details ▼"}
+                        </button>
+                        {detailsOpen && detailSegs.map((seg) => (
+                          <div key={seg.id} style={{
+                            background: C.surface, borderRadius: 12, padding: 14,
+                            border: `1px solid ${C.border}`, marginBottom: 10,
+                          }}>
+                            <div style={{ fontFamily: FONT, fontSize: 10, color: C.focus, textTransform: "uppercase", letterSpacing: "0.2em", marginBottom: 6 }}>
+                              {seg.id === "item" ? "Item" : emptyWardrobe ? "Style Advice" : "Wardrobe Match"}
+                            </div>
+                            <p style={{ fontFamily: FONT, fontSize: 15, color: C.text, lineHeight: 1.7, margin: 0 }}>
+                              {seg.text}
+                            </p>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </>
+                );
+              })()}
 
               {/* Follow-up chatbot — full multi-turn conversation about this item */}
               <ContextChat

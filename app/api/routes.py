@@ -194,6 +194,83 @@ Return ONLY valid JSON:
     }
 
 
+@router.post("/quick-compatibility")
+async def quick_compatibility(
+    image: UploadFile = File(...),
+    wardrobe: str = Form(""),
+    locale: str = Form("en"),
+):
+    """
+    Fast wardrobe compatibility verdict. Returns only a verdict + one-sentence reason.
+    Uses a short Gemini prompt (max 80 tokens) for lower latency than /shopping-analyze.
+    """
+    from google import genai
+    from google.genai import types as gtypes
+    from app.core.config import settings
+    import io as _io
+    import json as _json
+
+    start_time = time.time()
+
+    if not image or not image.filename:
+        raise ImageQualityError(
+            error_code="no_file_uploaded",
+            user_message=ERROR_MESSAGES["no_file_uploaded"],
+        )
+
+    raw_bytes = await image.read()
+    img = ingest_image(raw_bytes)
+    check_image_quality(img)
+    segmentation_model.verify_clothing_for_shopping(img)
+
+    has_wardrobe = bool(wardrobe and wardrobe.strip() and wardrobe.strip() != "[]")
+
+    if has_wardrobe:
+        context = f"User's wardrobe:\n{wardrobe}\n\nDoes this garment work with this wardrobe?"
+        instruction = "Return 'works', 'clashes', or 'style_tip_only' as verdict."
+    else:
+        context = "User has no wardrobe."
+        instruction = "Return 'style_tip_only' as verdict. Give one standalone style tip."
+
+    prompt = f"""You are RizzVision. {context}
+{instruction}
+One sentence reason, under 15 words, no markdown.
+Respond in the language with ISO code: {locale}.
+Return ONLY valid JSON: {{"verdict": "works|clashes|style_tip_only", "reason": "string"}}"""
+
+    client = genai.Client(api_key=settings.GEMINI_API_KEY)
+    img_bytes_io = _io.BytesIO()
+    img.save(img_bytes_io, format="JPEG", quality=75)
+    img_bytes = img_bytes_io.getvalue()
+
+    response = client.models.generate_content(
+        model=settings.GEMINI_MODEL,
+        contents=[
+            gtypes.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
+            prompt,
+        ],
+        config=gtypes.GenerateContentConfig(max_output_tokens=80, temperature=0.3),
+    )
+
+    try:
+        text = response.text.strip()
+        if text.startswith("```"):
+            text = "\n".join(l for l in text.split("\n") if not l.strip().startswith("```"))
+        data = _json.loads(text)
+    except Exception:
+        data = {"verdict": "style_tip_only", "reason": "Could not assess compatibility right now."}
+
+    latency_ms = int((time.time() - start_time) * 1000)
+    logger.info(f"Quick compatibility in {latency_ms}ms")
+
+    return {
+        "verdict": data.get("verdict", "style_tip_only"),
+        "reason": data.get("reason", ""),
+        "has_wardrobe": has_wardrobe,
+        "latency_ms": latency_ms,
+    }
+
+
 class ShoppingFollowUpRequest(BaseModel):
     question: str
     last_analysis_context: str

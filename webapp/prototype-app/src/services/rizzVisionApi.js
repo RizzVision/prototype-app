@@ -146,6 +146,53 @@ export async function analyzeForShopping(base64, wardrobeItems = [], locale = "e
 }
 
 /**
+ * Fast wardrobe compatibility check — verdict + one-sentence reason only.
+ * Fires in parallel with analyzeForShopping for an instant initial verdict.
+ *
+ * @param {string} base64 Raw base64 image string.
+ * @param {Array}  wardrobeItems Wardrobe item objects (may be empty).
+ * @param {string} locale Language code.
+ * @returns {Promise<{verdict: string, reason: string, has_wardrobe: boolean}>}
+ */
+export async function quickCompatibility(base64, wardrobeItems = [], locale = "en") {
+  const blob = base64ToBlob(base64);
+  const formData = new FormData();
+  formData.append("image", blob, "outfit.jpg");
+  formData.append("locale", locale);
+
+  const wardrobeSummary = wardrobeItems.length
+    ? wardrobeItems
+        .map((item) => {
+          const desc = item.colorDescription || item.color || "";
+          const extra = item.description ? ` — ${item.description}` : "";
+          return `- ${item.name || item.type} (${item.category || "clothing"}): ${desc}${extra}`.trim();
+        })
+        .join("\n")
+    : "";
+  formData.append("wardrobe", wardrobeSummary);
+
+  let res;
+  try {
+    res = await fetch(`${BASE_URL}/quick-compatibility`, { method: "POST", body: formData });
+  } catch {
+    throw new Error("Could not reach the analysis server.");
+  }
+
+  if (res.ok) return await res.json();
+
+  let errorBody;
+  try { errorBody = await res.json(); } catch { throw new Error(`Server error (${res.status}).`); }
+
+  if (res.status === 422) {
+    throw new ImageQualityError(
+      errorBody.user_message || "There was an issue with the photo.",
+      errorBody.error_code || "quality_error"
+    );
+  }
+  throw new Error(errorBody.user_message || `Quick check failed (${res.status}).`);
+}
+
+/**
  * Ask a follow-up question about the last scanned shopping item.
  *
  * @param {string} question           The user's question.
