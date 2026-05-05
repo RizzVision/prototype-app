@@ -110,25 +110,49 @@ export default function CameraView({ onCapture, onError, captureRef, onDescribe,
     });
   }, []);
 
+  const onErrorRef = useRef(onError);
+  useEffect(() => { onErrorRef.current = onError; }, [onError]);
+  const onDescribeRef = useRef(onDescribe);
+  useEffect(() => { onDescribeRef.current = onDescribe; }, [onDescribe]);
+
   const startCamera = useCallback(async (facing) => {
     const mode = facing ?? facingModeRef.current;
+
+    const attachStream = (stream) => {
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        // oncanplay is more reliable than onloadedmetadata across browsers
+        videoRef.current.oncanplay = () => setReady(true);
+        videoRef.current.onloadedmetadata = () => setReady(true);
+      }
+    };
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: mode, width: { ideal: 1280 }, height: { ideal: 960 } },
       });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.onloadedmetadata = () => setReady(true);
-      }
+      attachStream(stream);
     } catch (err) {
-      const msg = err.name === "NotAllowedError"
-        ? "Camera permission denied. Please allow camera access."
-        : "Could not access camera.";
-      setError(msg);
-      if (onError) onError(msg);
+      if (err.name === "NotAllowedError") {
+        const msg = "Camera permission denied. Please allow camera access.";
+        setError(msg);
+        if (onErrorRef.current) onErrorRef.current(msg);
+        return;
+      }
+      // facingMode constraint may fail on desktop — retry with any camera
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        attachStream(stream);
+      } catch (fallbackErr) {
+        const msg = fallbackErr.name === "NotAllowedError"
+          ? "Camera permission denied. Please allow camera access."
+          : "Could not access camera. Please check your device settings.";
+        setError(msg);
+        if (onErrorRef.current) onErrorRef.current(msg);
+      }
     }
-  }, [onError]);
+  }, []);
 
   const stopCamera = useCallback(() => {
     if (streamRef.current) {
@@ -200,7 +224,7 @@ export default function CameraView({ onCapture, onError, captureRef, onDescribe,
 
     // Fall back to pixel contrast if model not ready yet
     if (!modelReady || !cocoModel) {
-      if (onDescribe) onDescribe("Still loading detection model. Please wait a moment.");
+      if (onDescribeRef.current) onDescribeRef.current("Still loading detection model. Please wait a moment.");
       return;
     }
 
@@ -209,20 +233,23 @@ export default function CameraView({ onCapture, onError, captureRef, onDescribe,
       const predictions = await cocoModel.detect(video);
       const description = buildDescription(predictions, video.videoWidth, video.videoHeight);
       if (description === RESPONSES.whatsInFocus.ready) playReadyChime();
-      if (onDescribe) onDescribe(description);
+      if (onDescribeRef.current) onDescribeRef.current(description);
     } catch {
-      if (onDescribe) onDescribe("Could not analyze the frame. Try again.");
+      if (onDescribeRef.current) onDescribeRef.current("Could not analyze the frame. Try again.");
     }
-  }, [ready, modelReady, onDescribe]);
+  }, [ready, modelReady]);
+
+  const onCaptureRef = useRef(onCapture);
+  useEffect(() => { onCaptureRef.current = onCapture; }, [onCapture]);
 
   const handleCapture = useCallback(() => {
     playShutterSound();
     const dataUrl = captureFrame();
-    if (dataUrl && onCapture) {
+    if (dataUrl && onCaptureRef.current) {
       const base64 = dataUrl.split(",")[1];
-      onCapture(base64, dataUrl);
+      onCaptureRef.current(base64, dataUrl);
     }
-  }, [captureFrame, onCapture]);
+  }, [captureFrame]);
 
   useEffect(() => {
     startCamera();
@@ -232,6 +259,13 @@ export default function CameraView({ onCapture, onError, captureRef, onDescribe,
   useEffect(() => {
     if (captureRef) captureRef.current = handleCapture;
   }, [captureRef, handleCapture]);
+
+  // Continuous clothing detection — fires onDescribe every 1.5s when autoCapture is on
+  useEffect(() => {
+    if (!autoCapture || !ready || !modelReady) return;
+    const id = setInterval(() => describeWhatsFocused(), 1500);
+    return () => clearInterval(id);
+  }, [autoCapture, ready, modelReady, describeWhatsFocused]);
 
   useEffect(() => {
     if (!autoCapture || !ready) return;
