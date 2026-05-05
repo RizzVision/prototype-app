@@ -120,36 +120,51 @@ export default function CameraView({ onCapture, onError, captureRef, onDescribe,
 
     const attachStream = (stream) => {
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        // oncanplay is more reliable than onloadedmetadata across browsers
-        videoRef.current.oncanplay = () => setReady(true);
-        videoRef.current.onloadedmetadata = () => setReady(true);
-      }
+      const video = videoRef.current;
+      if (!video) return;
+
+      video.srcObject = stream;
+
+      // Use { once: true } listeners — more reliable than onX assignments across browsers.
+      // Check videoWidth > 0 to avoid marking ready on a black/uninitialized frame.
+      const markReady = () => {
+        if (video.videoWidth > 0) setReady(true);
+      };
+      video.addEventListener("canplay", markReady, { once: true });
+      video.addEventListener("loadeddata", markReady, { once: true });
+
+      // iOS Safari ignores the autoPlay attribute for programmatically set srcObject.
+      // Calling play() explicitly is required; it's safe to ignore the rejection on
+      // browsers that block autoplay until a user gesture.
+      video.play().catch(() => {});
     };
 
+    const showError = (err) => {
+      const msg = err.name === "NotAllowedError"
+        ? "Camera permission denied. Please allow camera access."
+        : "Could not access camera. Please check your device settings.";
+      setError(msg);
+      if (onErrorRef.current) onErrorRef.current(msg);
+    };
+
+    // Use { ideal } so browsers pick the preferred facing mode without throwing
+    // OverconstrainedError when it's unavailable (e.g. desktops with one camera).
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: mode, width: { ideal: 1280 }, height: { ideal: 960 } },
+        video: {
+          facingMode: { ideal: mode },
+          width: { ideal: 1280 },
+          height: { ideal: 960 },
+        },
       });
       attachStream(stream);
     } catch (err) {
-      if (err.name === "NotAllowedError") {
-        const msg = "Camera permission denied. Please allow camera access.";
-        setError(msg);
-        if (onErrorRef.current) onErrorRef.current(msg);
-        return;
-      }
-      // facingMode constraint may fail on desktop — retry with any camera
+      if (err.name === "NotAllowedError") { showError(err); return; }
+      // Last resort: no constraints at all
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        attachStream(stream);
-      } catch (fallbackErr) {
-        const msg = fallbackErr.name === "NotAllowedError"
-          ? "Camera permission denied. Please allow camera access."
-          : "Could not access camera. Please check your device settings.";
-        setError(msg);
-        if (onErrorRef.current) onErrorRef.current(msg);
+        attachStream(await navigator.mediaDevices.getUserMedia({ video: true }));
+      } catch (fallback) {
+        showError(fallback);
       }
     }
   }, []);
