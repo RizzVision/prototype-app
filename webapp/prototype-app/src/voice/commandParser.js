@@ -32,7 +32,6 @@ function parseLanguageCommand(text) {
     "change to",
     "switch to",
     "speak in",
-    "language",
   ];
 
   const hasLanguageIntent = languagePrefixes.some((prefix) => text.includes(prefix));
@@ -44,7 +43,7 @@ function parseLanguageCommand(text) {
     }
   }
 
-  return { type: "SET_LANGUAGE", code: null };
+  return null;
 }
 
 /**

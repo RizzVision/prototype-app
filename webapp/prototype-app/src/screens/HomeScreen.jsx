@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import Screen from "../components/Screen";
 import BigButton from "../components/BigButton";
 import MicButton from "../components/MicButton";
+import LanguageSelector from "../components/LanguageSelector";
 import { useApp } from "../contexts/AppContext";
 import { useAuth } from "../contexts/AuthContext";
 import { useLocale } from "../contexts/LocaleContext";
@@ -59,6 +60,10 @@ export default function HomeScreen() {
           style={{ fontSize: 14, color: "#888", textAlign: "center", marginBottom: 8 }}
         >
           {isThinking ? t("home.statusThinking") : isListening ? t("home.statusListening") : t("home.statusIdle")}
+        </div>
+
+        <div style={{ width: "100%" }}>
+          <LanguageSelector />
         </div>
 
         <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 14 }}>
