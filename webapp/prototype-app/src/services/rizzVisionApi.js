@@ -272,6 +272,40 @@ export async function identifyWardrobeItem(base64, wardrobeItems = [], locale = 
 }
 
 /**
+ * Lightweight frame description — 1-2 TTS-ready sentences about visible clothing.
+ *
+ * @param {string} base64 Raw base64 image string (no data URL prefix).
+ * @param {string} locale Language code.
+ * @returns {Promise<{description: string, latency_ms: number}>}
+ */
+export async function describeFrame(base64, locale = "en") {
+  const blob = base64ToBlob(base64);
+  const formData = new FormData();
+  formData.append("image", blob, "frame.jpg");
+  formData.append("locale", locale);
+
+  let res;
+  try {
+    res = await fetch(`${BASE_URL}/describe-frame`, { method: "POST", body: formData });
+  } catch {
+    throw new Error("Could not reach the analysis server.");
+  }
+
+  if (res.ok) return await res.json();
+
+  let errorBody;
+  try { errorBody = await res.json(); } catch { throw new Error(`Server error (${res.status}).`); }
+
+  if (res.status === 422) {
+    throw new ImageQualityError(
+      errorBody.user_message || "There was an issue with the photo. Please try again.",
+      errorBody.error_code || "quality_error"
+    );
+  }
+  throw new Error(errorBody.user_message || `Describe failed (${res.status}).`);
+}
+
+/**
  * Quick health check — returns true if the backend is reachable.
  */
 export async function pingBackend() {

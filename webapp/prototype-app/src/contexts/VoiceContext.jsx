@@ -85,6 +85,7 @@ export function VoiceProvider({ children, announce, onScreenCommand }) {
       case "READ_RESULT":
       case "SELECT_OCCASION":
       case "SELECT_MOOD":
+      case "DESCRIBE_FRAME":
         if (onScreenCommand) onScreenCommand(command);
         break;
       default:

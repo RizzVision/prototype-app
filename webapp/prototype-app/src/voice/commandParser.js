@@ -227,6 +227,16 @@ const COMMANDS = [
   { patterns: ["gym", "active", "workout", "sport"],action: { type: "SELECT_OCCASION", id: "gym" } },
   { patterns: ["travel", "trip", "travelling"],     action: { type: "SELECT_OCCASION", id: "travel" } },
 
+  // ── Describe in frame ─────────────────────────────────────────────────────
+  {
+    patterns: [
+      "what do you see", "describe frame", "what is in the camera",
+      "describe what you see", "what can you see",
+      "describe what's in frame", "what's in the camera",
+    ],
+    action: { type: "DESCRIBE_FRAME" },
+  },
+
   // ── Mood selection ────────────────────────────────────────────────────────
   { patterns: ["bold", "strong", "statement"],             action: { type: "SELECT_MOOD", id: "bold" } },
   { patterns: ["minimal", "minimalist", "clean", "simple"],action: { type: "SELECT_MOOD", id: "minimal" } },

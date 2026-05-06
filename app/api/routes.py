@@ -692,3 +692,64 @@ Only include a command when the user clearly wants an action, not just informati
             "answer": "I did not quite catch that. Try saying a command like 'my wardrobe' or 'scan clothing'.",
             "command": None,
         }
+
+
+@router.post("/describe-frame")
+async def describe_frame(
+    image: UploadFile = File(...),
+    locale: str = Form("en"),
+):
+    """
+    Lightweight Gemini call: describe visible clothing in 1-2 TTS-ready sentences.
+    No clothing gate — works even on borderline frames.
+    """
+    from google import genai
+    from google.genai import types as gtypes
+    from app.core.config import settings
+    import io as _io
+
+    start_time = time.time()
+
+    if not image or not image.filename:
+        raise ImageQualityError(
+            error_code="no_file_uploaded",
+            user_message=ERROR_MESSAGES["no_file_uploaded"],
+        )
+
+    raw_bytes = await image.read()
+    img = ingest_image(raw_bytes)
+    check_image_quality(img)
+
+    client = genai.Client(api_key=settings.GEMINI_API_KEY)
+
+    prompt = (
+        f"You are RizzVision. A visually impaired user is pointing their camera at something. "
+        f"Describe what clothing or fashion item you see in 1-2 short sentences. "
+        f"Focus on: garment type, colour, and any notable detail. "
+        f"If there is no clothing visible, say so in one sentence. "
+        f"No markdown. Every sentence under 15 words. "
+        f"Respond in the language with ISO code: {locale}."
+    )
+
+    img_bytes_io = _io.BytesIO()
+    img.save(img_bytes_io, format="JPEG", quality=75)
+    img_bytes = img_bytes_io.getvalue()
+
+    response = client.models.generate_content(
+        model=settings.GEMINI_MODEL,
+        contents=[
+            gtypes.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
+            prompt,
+        ],
+        config=gtypes.GenerateContentConfig(max_output_tokens=100, temperature=0.3),
+    )
+
+    description = (
+        response.text.strip()
+        if response.text
+        else "I could not see anything clearly. Please try again."
+    )
+    latency_ms = int((time.time() - start_time) * 1000)
+    logger.info(f"Describe frame in {latency_ms}ms | locale={locale}")
+
+    return {"description": description, "latency_ms": latency_ms}
