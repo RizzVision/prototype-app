@@ -628,6 +628,9 @@ WHAT RizzVision CAN DO (use this to answer "what can you do" questions):
 - Shopping Mode: point the camera while shopping and hear real-time feedback on whether items match your wardrobe
 - Get Outfit Help: say an occasion and hear which exact items from your wardrobe to combine
 - My Wardrobe: browse, filter by category, or delete saved items
+- Edit Item: edit the name, category, or description of any saved wardrobe item
+- Description Mode: switch between short (quick summary) and long (full detail) outfit descriptions
+- Language: change the app language by voice (e.g. "switch to Hindi")
 - Voice commands: say any instruction aloud — navigate, filter, save, read results, and more
 
 USER SAID: "{req.transcript}"
@@ -637,6 +640,7 @@ INSTRUCTIONS:
 2. If the user wants to navigate somewhere, include a "command" field in your JSON.
 3. Keep the spoken answer under 40 words total — TTS is slow, brevity is kind.
 4. If you do not understand, say so clearly and suggest what the user can try.
+5. If the user asks about their wardrobe (counts, categories, specific items), answer using the wardrobe list above.
 
 Return ONLY valid JSON:
 {{
@@ -662,6 +666,8 @@ Valid command types and shapes:
   {{"type": "PAUSE_SCAN"}}
   {{"type": "RESUME_SCAN"}}
   {{"type": "CONFIRM"}}
+  {{"type": "SET_LANGUAGE", "language": "<en|hi|es|fr|...>"}}
+  {{"type": "LIST_LANGUAGES"}}
 
 Only include a command when the user clearly wants an action, not just information."""
 
