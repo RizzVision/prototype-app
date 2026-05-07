@@ -21,7 +21,27 @@ export const SCREENS = {
   MIRROR: "mirror",
   EDIT_ITEM: "editItem",
   IDENTIFY: "identify",
+  PERSONALIZATION: "personalization",
 };
+
+export const PATTERN_OPTIONS = [
+  "solid", "stripes", "checks", "floral", "geometric", "animal print", "abstract",
+];
+
+export const COLOR_CHIP_OPTIONS = [
+  { label: "Black",     hex: "#1A1A1A" },
+  { label: "White",     hex: "#F0F0F0" },
+  { label: "Navy",      hex: "#1B2A4A" },
+  { label: "Grey",      hex: "#808080" },
+  { label: "Beige",     hex: "#C9A96E" },
+  { label: "Olive",     hex: "#6B7C3A" },
+  { label: "Burgundy",  hex: "#722F37" },
+  { label: "Mustard",   hex: "#D4A017" },
+  { label: "Terracotta",hex: "#C2603A" },
+  { label: "Cobalt",    hex: "#0047AB" },
+  { label: "Blush",     hex: "#E8A898" },
+  { label: "Sage",      hex: "#87AE73" },
+];
 
 export const CATEGORIES = [
   { id: "tops",      label: "Tops",      icon: "👕", desc: "Shirts, blouses, jackets, hoodies" },

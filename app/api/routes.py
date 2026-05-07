@@ -28,8 +28,9 @@ router = APIRouter()
 @router.post("/analyze")
 async def analyze_outfit(
     image: UploadFile = File(...),
-    occasion: str = "",
+    occasion: str = Form(""),
     mode: str = Form(""),
+    personalization: str = Form(""),
 ):
     """
     Analyse an outfit photo and return TTS-ready speech segments.
@@ -57,8 +58,26 @@ async def analyze_outfit(
     # Clothing presence gate (SegFormer pixel check + CLIP semantic check)
     segmentation_model.verify_clothing(img)
 
+    # Build a personalization prefix for the LLM if the user has a style profile
+    personalization_text = ""
+    if personalization:
+        import json as _json
+        try:
+            p = _json.loads(personalization)
+            parts = []
+            if p.get("height_cm"): parts.append(f"height {p['height_cm']}cm")
+            if p.get("weight_kg"): parts.append(f"weight {p['weight_kg']}kg")
+            if p.get("color_likes"): parts.append(f"loves colours: {', '.join(p['color_likes'])}")
+            if p.get("color_dislikes"): parts.append(f"avoids colours: {', '.join(p['color_dislikes'])}")
+            if p.get("pattern_prefs"): parts.append(f"prefers patterns: {', '.join(p['pattern_prefs'])}")
+            if p.get("style_notes"): parts.append(p["style_notes"])
+            if parts:
+                personalization_text = "; ".join(parts)
+        except Exception:
+            pass
+
     # Single LLM call — image + occasion (+ mode for mirror full-person feedback)
-    llm_feedback = get_outfit_feedback(img, occasion=occasion, mode=mode)
+    llm_feedback = get_outfit_feedback(img, occasion=occasion, mode=mode, personalization=personalization_text)
 
     speech_segments = shape_response(llm_feedback)
 
@@ -78,8 +97,9 @@ async def analyze_outfit(
 @router.post("/shopping-analyze")
 async def shopping_analyze(
     image: UploadFile = File(...),
-    wardrobe: str = "",
+    wardrobe: str = Form(""),
     locale: str = Form("en"),
+    personalization: str = Form(""),
 ):
     """
     Shopping mode: analyse the item in frame and compare it against the user's wardrobe.
@@ -120,13 +140,31 @@ async def shopping_analyze(
             "Tell the user how this item would look on them and what it would generally pair well with."
         )
 
+    # Build personalization prefix
+    personalization_text = ""
+    if personalization:
+        import json as _json_shop
+        try:
+            p = _json_shop.loads(personalization)
+            parts = []
+            if p.get("height_cm"): parts.append(f"height {p['height_cm']}cm")
+            if p.get("weight_kg"): parts.append(f"weight {p['weight_kg']}kg")
+            if p.get("color_likes"): parts.append(f"loves: {', '.join(p['color_likes'])}")
+            if p.get("color_dislikes"): parts.append(f"avoids: {', '.join(p['color_dislikes'])}")
+            if p.get("pattern_prefs"): parts.append(f"patterns: {', '.join(p['pattern_prefs'])}")
+            if p.get("style_notes"): parts.append(p["style_notes"])
+            if parts:
+                personalization_text = "User style profile: " + "; ".join(parts) + ".\n"
+        except Exception:
+            pass
+
     client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
     prompt = f"""You are RizzVision in shopping mode, speaking to a visually impaired user.
 Your response is read aloud. Every sentence must be under 15 words. No markdown. No lists.
 Use concrete, tactile language. Never say "looks good" — say WHY.
 Respond in the language with ISO code: {locale}.
-
+{personalization_text}
 {wardrobe_section}
 
 Task:

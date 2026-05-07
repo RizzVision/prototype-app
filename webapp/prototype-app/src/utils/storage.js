@@ -144,6 +144,53 @@ export async function deleteClothingImage(path) {
   invalidateImageUrl(path);
 }
 
+export async function getPersonalization() {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return {};
+  const { data } = await supabase
+    .from("user_profiles")
+    .select("*")
+    .eq("user_id", user.id)
+    .single();
+  return data || {};
+}
+
+export async function savePersonalization(profile) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+  const { error } = await supabase
+    .from("user_profiles")
+    .upsert({ user_id: user.id, ...profile, updated_at: new Date().toISOString() });
+  if (error) throw error;
+}
+
+export async function uploadProfilePhoto(base64Data) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+
+  const byteString = atob(base64Data);
+  const uint8Array = new Uint8Array(byteString.length);
+  for (let i = 0; i < byteString.length; i++) {
+    uint8Array[i] = byteString.charCodeAt(i);
+  }
+  const blob = new Blob([uint8Array], { type: "image/jpeg" });
+
+  const fileName = `${user.id}/ref_${Date.now()}.jpg`;
+  const { error } = await supabase.storage
+    .from("profile-photos")
+    .upload(fileName, blob, { contentType: "image/jpeg", upsert: true });
+  if (error) throw error;
+  return fileName;
+}
+
+export async function getProfilePhotoUrl(path) {
+  if (!path) return null;
+  const { data } = await supabase.storage
+    .from("profile-photos")
+    .createSignedUrl(path, 3600);
+  return data?.signedUrl ?? null;
+}
+
 export async function getImageUrl(path) {
   if (!path) return null;
   const cached = urlCache.get(path);

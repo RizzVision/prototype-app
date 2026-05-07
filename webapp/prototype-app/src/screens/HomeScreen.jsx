@@ -86,6 +86,12 @@ export default function HomeScreen() {
             icon="🗄️"
             onClick={() => navigate(SCREENS.WARDROBE)}
           />
+          <BigButton
+            label="Style Profile"
+            hint="Set your measurements, colour preferences, and style notes"
+            icon="👤"
+            onClick={() => navigate(SCREENS.PERSONALIZATION)}
+          />
         </div>
 
         <div style={{

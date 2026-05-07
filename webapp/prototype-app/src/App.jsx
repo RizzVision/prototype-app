@@ -17,6 +17,7 @@ import ShoppingScreen from "./screens/ShoppingScreen";
 import MirrorScreen from "./screens/MirrorScreen";
 import EditItemScreen from "./screens/EditItemScreen";
 import IdentifyScreen from "./screens/IdentifyScreen";
+import PersonalizationScreen from "./screens/PersonalizationScreen";
 import { SCREENS, C, FONT } from "./utils/constants";
 import { playNav } from "./utils/sounds";
 import { stopSpeech } from "./hooks/useSpeechOutput";
@@ -31,6 +32,7 @@ function getScreenTitle(screen, t) {
     [SCREENS.MIRROR]: "app.screenTitles.mirror",
     [SCREENS.EDIT_ITEM]: "app.screenTitles.editItem",
     [SCREENS.IDENTIFY]: "app.screenTitles.identify",
+    [SCREENS.PERSONALIZATION]: "app.screenTitles.personalization",
   };
 
   const key = map[screen];
@@ -47,9 +49,10 @@ function ScreenRouter() {
     case SCREENS.OUTFIT:   return <OutfitScreen />;
     case SCREENS.SHOPPING: return <ShoppingScreen />;
     case SCREENS.MIRROR:   return <MirrorScreen />;
-    case SCREENS.EDIT_ITEM: return <EditItemScreen />;
-    case SCREENS.IDENTIFY:  return <IdentifyScreen />;
-    default:               return <HomeScreen />;
+    case SCREENS.EDIT_ITEM:        return <EditItemScreen />;
+    case SCREENS.IDENTIFY:         return <IdentifyScreen />;
+    case SCREENS.PERSONALIZATION:  return <PersonalizationScreen />;
+    default:                       return <HomeScreen />;
   }
 }
 

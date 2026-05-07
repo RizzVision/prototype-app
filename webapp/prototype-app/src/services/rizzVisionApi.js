@@ -10,6 +10,8 @@
  *   - Server / network errors → throws plain Error.
  */
 
+import { getPersonalization } from "../utils/storage";
+
 const BASE_URL = (import.meta.env.VITE_RIZZVISION_API_URL || "http://localhost:8000").replace(/\/$/, "");
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -56,6 +58,13 @@ export async function analyzeOutfit(base64, occasion = "", locale = "en", mode =
   if (occasion) formData.append("occasion", occasion);
   formData.append("locale", locale);
   if (mode) formData.append("mode", mode);
+  try {
+    const profile = await getPersonalization();
+    const { user_id, updated_at, self_photo_url, reference_outfit_urls, ...usable } = profile;
+    if (Object.values(usable).some(v => v != null && (Array.isArray(v) ? v.length > 0 : v !== "" && v !== 0))) {
+      formData.append("personalization", JSON.stringify(usable));
+    }
+  } catch { /* non-fatal — proceed without */ }
 
   let res;
   try {
@@ -109,6 +118,13 @@ export async function analyzeForShopping(base64, wardrobeItems = [], locale = "e
   const formData = new FormData();
   formData.append("image", blob, "outfit.jpg");
   formData.append("locale", locale);
+  try {
+    const profile = await getPersonalization();
+    const { user_id, updated_at, self_photo_url, reference_outfit_urls, ...usable } = profile;
+    if (Object.values(usable).some(v => v != null && (Array.isArray(v) ? v.length > 0 : v !== "" && v !== 0))) {
+      formData.append("personalization", JSON.stringify(usable));
+    }
+  } catch { /* non-fatal */ }
 
   // Summarise wardrobe into a readable text block for the LLM
   const wardrobeSummary = wardrobeItems.length

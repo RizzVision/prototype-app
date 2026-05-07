@@ -126,7 +126,7 @@ def _validate_feedback(data: dict) -> dict:
     return data
 
 
-def get_outfit_feedback(img: Image.Image, occasion: str = "", mode: str = "") -> dict:
+def get_outfit_feedback(img: Image.Image, occasion: str = "", mode: str = "", personalization: str = "") -> dict:
     """
     Single Gemini Flash call for outfit analysis.
 
@@ -159,7 +159,8 @@ def get_outfit_feedback(img: Image.Image, occasion: str = "", mode: str = "") ->
         "\nUSER'S OCCASION: not specified. Leave occasion_verdict as an empty string."
     )
 
-    user_prompt = f"Analyse this outfit photo and provide structured feedback as JSON.{occasion_line}"
+    personalization_line = f"\nUSER STYLE PROFILE: {personalization}" if personalization else ""
+    user_prompt = f"Analyse this outfit photo and provide structured feedback as JSON.{occasion_line}{personalization_line}"
 
     config = types.GenerateContentConfig(
         system_instruction=system_prompt,
