@@ -79,5 +79,9 @@ def shape_response(llm_feedback: dict) -> list[dict]:
     if fix_text:
         segments.append({"id": "top_fix", "text": fix_text})
 
+    appearance_text = _clean_for_tts(llm_feedback.get("personal_appearance", ""))
+    if appearance_text:
+        segments.append({"id": "personal_appearance", "text": appearance_text})
+
     logger.info(f"Shaped {len(segments)} speech segments")
     return segments

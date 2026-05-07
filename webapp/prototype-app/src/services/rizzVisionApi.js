@@ -49,12 +49,13 @@ export class ImageQualityError extends Error {
  *   Use .userMessage for a spoken sentence ready for TTS.
  * @throws {Error} For network errors or unexpected server failures.
  */
-export async function analyzeOutfit(base64, occasion = "", locale = "en") {
+export async function analyzeOutfit(base64, occasion = "", locale = "en", mode = "") {
   const blob = base64ToBlob(base64);
   const formData = new FormData();
   formData.append("image", blob, "outfit.jpg");
   if (occasion) formData.append("occasion", occasion);
   formData.append("locale", locale);
+  if (mode) formData.append("mode", mode);
 
   let res;
   try {

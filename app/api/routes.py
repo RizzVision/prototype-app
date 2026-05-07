@@ -29,6 +29,7 @@ router = APIRouter()
 async def analyze_outfit(
     image: UploadFile = File(...),
     occasion: str = "",
+    mode: str = Form(""),
 ):
     """
     Analyse an outfit photo and return TTS-ready speech segments.
@@ -56,18 +57,19 @@ async def analyze_outfit(
     # Clothing presence gate (SegFormer pixel check + CLIP semantic check)
     segmentation_model.verify_clothing(img)
 
-    # Single LLM call — image + occasion only
-    llm_feedback = get_outfit_feedback(img, occasion=occasion)
+    # Single LLM call — image + occasion (+ mode for mirror full-person feedback)
+    llm_feedback = get_outfit_feedback(img, occasion=occasion, mode=mode)
 
     speech_segments = shape_response(llm_feedback)
 
     latency_ms = int((time.time() - start_time) * 1000)
-    logger.info(f"Analysis complete in {latency_ms}ms | occasion={occasion or 'not specified'}")
+    logger.info(f"Analysis complete in {latency_ms}ms | occasion={occasion or 'not specified'} | mode={mode or 'standard'}")
 
     return {
         "speech_segments": speech_segments,
         "occasion_verdict": llm_feedback.get("occasion_verdict", ""),
         "wardrobe_description": llm_feedback.get("wardrobe_description", ""),
+        "personal_appearance": llm_feedback.get("personal_appearance", ""),
         "skin_detected": False,
         "latency_ms": latency_ms,
     }

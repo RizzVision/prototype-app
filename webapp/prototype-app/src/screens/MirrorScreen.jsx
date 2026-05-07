@@ -48,7 +48,7 @@ export default function MirrorScreen() {
     speak(RESPONSES.mirrorAnalyzing);
 
     try {
-      const analysis = await analyzeOutfit(base64, "", language);
+      const analysis = await analyzeOutfit(base64, "", language, "mirror");
       setResult(analysis);
       setPhase("result");
 
@@ -59,6 +59,7 @@ export default function MirrorScreen() {
         const shortParts = [
           segMap["garments"],
           segMap["overall_verdict"],
+          segMap["personal_appearance"],
         ].filter(Boolean);
         const shortText = shortParts.join("  ");
         announce(shortText, "polite");
@@ -91,6 +92,7 @@ export default function MirrorScreen() {
     const parts = [
       segMap["garments"],
       segMap["overall_verdict"],
+      segMap["personal_appearance"],
     ].filter(Boolean);
     if (parts.length) speak(parts.join("  "));
   }, [result, speak]);

@@ -62,6 +62,14 @@ Field guidance:
 - occasion_verdict: One to two sentences. Funny and warm if it works. Gently humorous with a concrete fix if it does not. Always references the specific occasion the user chose.
 - wardrobe_description: 3-4 sentences describing the single main garment for wardrobe identification. Include type, exact colour, pattern/texture, fabric impression, fit, neckline, sleeves, and any distinctive features."""
 
+MIRROR_SYSTEM_PROMPT = SYSTEM_PROMPT.replace(
+    'Return ONLY valid JSON. No markdown. No preamble. No explanation outside the JSON.\n\nOutput schema:\n{\n  "garments": [{"name": "string", "description": "string"}],\n  "color_feedback": "string",\n  "fit_feedback": "string",\n  "overall_verdict": "string",\n  "top_fix": "string",\n  "occasion_verdict": "string",\n  "wardrobe_description": "string"\n}',
+    'Return ONLY valid JSON. No markdown. No preamble. No explanation outside the JSON.\n\nOutput schema:\n{\n  "garments": [{"name": "string", "description": "string"}],\n  "color_feedback": "string",\n  "fit_feedback": "string",\n  "overall_verdict": "string",\n  "top_fix": "string",\n  "occasion_verdict": "string",\n  "wardrobe_description": "string",\n  "personal_appearance": "string"\n}',
+).replace(
+    "- wardrobe_description: 3-4 sentences describing the single main garment for wardrobe identification. Include type, exact colour, pattern/texture, fabric impression, fit, neckline, sleeves, and any distinctive features.",
+    "- wardrobe_description: 3-4 sentences describing the single main garment for wardrobe identification. Include type, exact colour, pattern/texture, fabric impression, fit, neckline, sleeves, and any distinctive features.\n- personal_appearance: 2-3 sentences on how this outfit fits THIS specific person's body. Observe body proportion, silhouette balance, and overall posture impression. Use concrete, tactile language. Never use visual metaphors.",
+)
+
 REPAIR_PROMPT = """The previous response was not valid JSON. Here is the raw response:
 
 {raw_response}
@@ -105,6 +113,7 @@ def _validate_feedback(data: dict) -> dict:
         "top_fix": "Try taking a clearer photo for better feedback.",
         "occasion_verdict": "",
         "wardrobe_description": "",
+        "personal_appearance": "",
     }
     for field_name, default in required_fields.items():
         if field_name not in data or not data[field_name]:
@@ -117,21 +126,27 @@ def _validate_feedback(data: dict) -> dict:
     return data
 
 
-def get_outfit_feedback(img: Image.Image, occasion: str = "") -> dict:
+def get_outfit_feedback(img: Image.Image, occasion: str = "", mode: str = "") -> dict:
     """
     Single Gemini Flash call for outfit analysis.
 
     Args:
         img: PIL image of the outfit.
         occasion: User's chosen occasion label (e.g. "Date Night").
+        mode: Analysis mode. Use "mirror" for full-person feedback including
+              personal_appearance. Empty string uses the standard outfit prompt.
 
     Returns:
         Validated dict with garments, color_feedback, fit_feedback,
-        overall_verdict, top_fix, occasion_verdict.
+        overall_verdict, top_fix, occasion_verdict, and (in mirror mode)
+        personal_appearance.
     """
     from app.services.image_ingestion import ImageQualityError
 
     client = _get_client()
+
+    system_prompt = MIRROR_SYSTEM_PROMPT if mode == "mirror" else SYSTEM_PROMPT
+    max_tokens = 800 if mode == "mirror" else 600
 
     img_bytes_io = io.BytesIO()
     img.save(img_bytes_io, format="JPEG", quality=85)
@@ -147,8 +162,8 @@ def get_outfit_feedback(img: Image.Image, occasion: str = "") -> dict:
     user_prompt = f"Analyse this outfit photo and provide structured feedback as JSON.{occasion_line}"
 
     config = types.GenerateContentConfig(
-        system_instruction=SYSTEM_PROMPT,
-        max_output_tokens=600,
+        system_instruction=system_prompt,
+        max_output_tokens=max_tokens,
         temperature=0.4,
     )
 
