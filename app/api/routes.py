@@ -696,6 +696,86 @@ Only include a command when the user clearly wants an action, not just informati
         }
 
 
+@router.post("/quick-scan")
+async def quick_scan(
+    image: UploadFile = File(...),
+    locale: str = Form("en"),
+):
+    """
+    Lightweight Gemini call to identify the single main clothing item in a photo.
+    Returns a suggested name, category, and short 1-2 sentence description.
+    Used by the simplified scan-to-wardrobe flow.
+    """
+    from google import genai
+    from google.genai import types as gtypes
+    from app.core.config import settings
+    import io as _io
+    import json as _json
+
+    if not image or not image.filename:
+        raise ImageQualityError(
+            error_code="no_file_uploaded",
+            user_message=ERROR_MESSAGES["no_file_uploaded"],
+        )
+
+    raw_bytes = await image.read()
+    img = ingest_image(raw_bytes)
+    check_image_quality(img)
+
+    client = genai.Client(api_key=settings.GEMINI_API_KEY)
+
+    prompt = f"""You are RizzVision helping a visually impaired user save a clothing item.
+Look at the photo and identify the SINGLE most prominent clothing item visible.
+Respond in the language with ISO code: {locale}.
+
+Return ONLY valid JSON, no markdown:
+{{
+  "suggested_name": "short recognisable name e.g. Navy Blue Polo, White Kurta, Black Sneakers",
+  "category": "one of: tops | bottoms | dresses | footwear | jewellery",
+  "short_description": "1-2 spoken sentences describing the item. Include colour, type, and one standout detail. Under 30 words total.",
+  "color": "dominant colour name e.g. Navy Blue, Olive Green, Off-White"
+}}
+
+Rules:
+- suggested_name: 2-4 words, specific and memorable. Include colour and garment type.
+- category: choose the best fit from the 5 options only.
+- short_description: natural spoken language. No markdown. Under 30 words.
+- If you cannot identify clothing, set suggested_name to "Clothing Item" and describe what you see."""
+
+    img_bytes_io = _io.BytesIO()
+    img.save(img_bytes_io, format="JPEG", quality=80)
+    img_bytes = img_bytes_io.getvalue()
+
+    try:
+        response = client.models.generate_content(
+            model=settings.GEMINI_MODEL,
+            contents=[
+                gtypes.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
+                prompt,
+            ],
+            config=gtypes.GenerateContentConfig(max_output_tokens=150, temperature=0.3),
+        )
+        text = response.text.strip()
+        if text.startswith("```"):
+            text = "\n".join(l for l in text.split("\n") if not l.strip().startswith("```"))
+        data = _json.loads(text)
+    except Exception as e:
+        logger.warning(f"quick-scan LLM failed: {e}")
+        data = {
+            "suggested_name": "Clothing Item",
+            "category": "tops",
+            "short_description": "I can see a clothing item in the photo.",
+            "color": "",
+        }
+
+    return {
+        "suggested_name": data.get("suggested_name", "Clothing Item"),
+        "category": data.get("category", "tops"),
+        "short_description": data.get("short_description", ""),
+        "color": data.get("color", ""),
+    }
+
+
 @router.post("/describe-frame")
 async def describe_frame(
     image: UploadFile = File(...),

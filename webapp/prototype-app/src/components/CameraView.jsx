@@ -1,114 +1,26 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import { C, FONT } from "../utils/constants";
-import { RESPONSES } from "../voice/voiceResponses";
+import { describeFrame } from "../services/rizzVisionApi";
+import { useLocale } from "../contexts/LocaleContext";
 
-// Clothing-related COCO-SSD classes and person (who is wearing clothes)
-const CLOTHING_CLASSES = new Set([
-  "person", "tie", "handbag", "backpack", "suitcase", "umbrella",
-]);
-
-// Lazy-load COCO-SSD model once across all instances
-let cocoModel = null;
-let cocoLoading = false;
-let cocoCallbacks = [];
-
-async function getCocoModel() {
-  if (cocoModel) return cocoModel;
-  if (cocoLoading) {
-    return new Promise((resolve) => cocoCallbacks.push(resolve));
-  }
-  cocoLoading = true;
-  try {
-    const cocoSsd = await import("@tensorflow-models/coco-ssd");
-    await import("@tensorflow/tfjs");
-    const model = await cocoSsd.load({ base: "lite_mobilenet_v2" });
-    cocoModel = model;
-    cocoCallbacks.forEach((cb) => cb(model));
-    cocoCallbacks = [];
-    return model;
-  } catch {
-    cocoLoading = false;
-    return null;
-  }
-}
-
-function buildDescription(predictions, videoWidth, videoHeight) {
-  if (!predictions || predictions.length === 0) {
-    return RESPONSES.whatsInFocus.noClothing;
-  }
-
-  // Filter to confident detections
-  const confident = predictions.filter((p) => p.score >= 0.4);
-  if (confident.length === 0) return RESPONSES.whatsInFocus.noClothing;
-
-  // Check if there's a person (someone wearing clothes) or clothing accessory
-  const clothingDetections = confident.filter((p) => CLOTHING_CLASSES.has(p.class));
-  const allClasses = confident.map((p) => p.class);
-
-  if (clothingDetections.length === 0) {
-    // Describe what IS visible if it's not clothing-related
-    const topClass = confident[0].class;
-    return `I can see ${topClass === "cell phone" ? "a phone" : `a ${topClass}`} in the frame. Please point the camera at clothing you want to scan.`;
-  }
-
-  // Find the best clothing/person detection
-  const best = clothingDetections.reduce((a, b) => (a.score > b.score ? a : b));
-  const [x, y, w, h] = best.bbox;
-  const area = (w * h) / (videoWidth * videoHeight);
-  const cx = (x + w / 2) / videoWidth;
-  const cy = (y + h / 2) / videoHeight;
-
-  // Framing feedback
-  if (area < 0.05) return RESPONSES.whatsInFocus.tooSmall;
-  if (area > 0.88) return RESPONSES.whatsInFocus.tooLarge;
-
-  // Position guidance
-  let position = "";
-  if (cx < 0.35) position = "Move camera slightly right. ";
-  else if (cx > 0.65) position = "Move camera slightly left. ";
-  if (cy < 0.3) position += "Move camera slightly down. ";
-  else if (cy > 0.7) position += "Move camera slightly up. ";
-
-  // Count non-person items visible
-  const otherItems = allClasses.filter((c) => c !== "person");
-
-  let description = "";
-  if (best.class === "person") {
-    if (otherItems.length > 0) {
-      description = `Person wearing clothing detected. Also visible: ${otherItems.join(", ")}. `;
-    } else {
-      description = "Person wearing clothing is in frame. ";
-    }
-  } else {
-    description = `${best.class} detected in frame. `;
-  }
-
-  if (position) {
-    description += position;
-  } else {
-    description += RESPONSES.whatsInFocus.ready;
-  }
-
-  return description.trim();
-}
-
-export default function CameraView({ onCapture, onError, captureRef, onDescribe, autoCapture = false, captureInterval = 6000 }) {
+export default function CameraView({
+  onCapture,
+  onError,
+  captureRef,
+  describeRef,
+  onDescribe,
+  autoCapture = false,
+  captureInterval = 5000,
+}) {
+  const { language } = useLocale();
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  const guidanceCanvasRef = useRef(null);
   const streamRef = useRef(null);
   const facingModeRef = useRef("environment");
   const [ready, setReady] = useState(false);
   const [error, setError] = useState(null);
   const [facingMode, setFacingMode] = useState("environment");
-  const [modelReady, setModelReady] = useState(false);
-
-  // Preload model as soon as component mounts
-  useEffect(() => {
-    getCocoModel().then((m) => {
-      if (m) setModelReady(true);
-    });
-  }, []);
+  const [describing, setDescribing] = useState(false);
 
   const onErrorRef = useRef(onError);
   useEffect(() => { onErrorRef.current = onError; }, [onError]);
@@ -122,20 +34,10 @@ export default function CameraView({ onCapture, onError, captureRef, onDescribe,
       streamRef.current = stream;
       const video = videoRef.current;
       if (!video) return;
-
       video.srcObject = stream;
-
-      // Use { once: true } listeners — more reliable than onX assignments across browsers.
-      // Check videoWidth > 0 to avoid marking ready on a black/uninitialized frame.
-      const markReady = () => {
-        if (video.videoWidth > 0) setReady(true);
-      };
+      const markReady = () => { if (video.videoWidth > 0) setReady(true); };
       video.addEventListener("canplay", markReady, { once: true });
       video.addEventListener("loadeddata", markReady, { once: true });
-
-      // iOS Safari ignores the autoPlay attribute for programmatically set srcObject.
-      // Calling play() explicitly is required; it's safe to ignore the rejection on
-      // browsers that block autoplay until a user gesture.
       video.play().catch(() => {});
     };
 
@@ -147,20 +49,13 @@ export default function CameraView({ onCapture, onError, captureRef, onDescribe,
       if (onErrorRef.current) onErrorRef.current(msg);
     };
 
-    // Use { ideal } so browsers pick the preferred facing mode without throwing
-    // OverconstrainedError when it's unavailable (e.g. desktops with one camera).
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: mode },
-          width: { ideal: 1280 },
-          height: { ideal: 960 },
-        },
+        video: { facingMode: { ideal: mode }, width: { ideal: 1280 }, height: { ideal: 960 } },
       });
       attachStream(stream);
     } catch (err) {
       if (err.name === "NotAllowedError") { showError(err); return; }
-      // Last resort: no constraints at all
       try {
         attachStream(await navigator.mediaDevices.getUserMedia({ video: true }));
       } catch (fallback) {
@@ -191,8 +86,7 @@ export default function CameraView({ onCapture, onError, captureRef, onDescribe,
     const canvas = canvasRef.current;
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-    const ctx = canvas.getContext("2d");
-    ctx.drawImage(video, 0, 0);
+    canvas.getContext("2d").drawImage(video, 0, 0);
     return canvas.toDataURL("image/jpeg", 0.85);
   }, []);
 
@@ -202,57 +96,16 @@ export default function CameraView({ onCapture, onError, captureRef, onDescribe,
       const playClick = (freq, startTime, gainVal) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
+        osc.connect(gain); gain.connect(ctx.destination);
         osc.frequency.setValueAtTime(freq, startTime);
         gain.gain.setValueAtTime(gainVal, startTime);
         gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.04);
-        osc.start(startTime);
-        osc.stop(startTime + 0.04);
+        osc.start(startTime); osc.stop(startTime + 0.04);
       };
       playClick(1200, ctx.currentTime, 0.4);
       playClick(900, ctx.currentTime + 0.05, 0.3);
     } catch (_) {}
   };
-
-  const playReadyChime = () => {
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const playNote = (freq, startTime) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.frequency.setValueAtTime(freq, startTime);
-        gain.gain.setValueAtTime(0.25, startTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.08);
-        osc.start(startTime);
-        osc.stop(startTime + 0.08);
-      };
-      playNote(523, ctx.currentTime);
-      playNote(659, ctx.currentTime + 0.08);
-    } catch (_) {}
-  };
-
-  const describeWhatsFocused = useCallback(async () => {
-    if (!ready || !videoRef.current) return;
-
-    // Fall back to pixel contrast if model not ready yet
-    if (!modelReady || !cocoModel) {
-      if (onDescribeRef.current) onDescribeRef.current("Still loading detection model. Please wait a moment.");
-      return;
-    }
-
-    try {
-      const video = videoRef.current;
-      const predictions = await cocoModel.detect(video);
-      const description = buildDescription(predictions, video.videoWidth, video.videoHeight);
-      if (description === RESPONSES.whatsInFocus.ready) playReadyChime();
-      if (onDescribeRef.current) onDescribeRef.current(description);
-    } catch {
-      if (onDescribeRef.current) onDescribeRef.current("Could not analyze the frame. Try again.");
-    }
-  }, [ready, modelReady]);
 
   const onCaptureRef = useRef(onCapture);
   useEffect(() => { onCaptureRef.current = onCapture; }, [onCapture]);
@@ -266,6 +119,26 @@ export default function CameraView({ onCapture, onError, captureRef, onDescribe,
     }
   }, [captureFrame]);
 
+  // Gemini-powered describe — replaces COCO-SSD
+  const triggerDescribe = useCallback(async () => {
+    if (!ready || describing) return;
+    const dataUrl = captureFrame();
+    if (!dataUrl) return;
+
+    setDescribing(true);
+    if (onDescribeRef.current) onDescribeRef.current("Looking at the frame…");
+
+    try {
+      const base64 = dataUrl.split(",")[1];
+      const { description } = await describeFrame(base64, language);
+      if (onDescribeRef.current) onDescribeRef.current(description);
+    } catch {
+      if (onDescribeRef.current) onDescribeRef.current("Could not describe the frame. Please try again.");
+    } finally {
+      setDescribing(false);
+    }
+  }, [ready, describing, captureFrame, language]);
+
   useEffect(() => {
     startCamera();
     return stopCamera;
@@ -275,13 +148,11 @@ export default function CameraView({ onCapture, onError, captureRef, onDescribe,
     if (captureRef) captureRef.current = handleCapture;
   }, [captureRef, handleCapture]);
 
-  // Continuous clothing detection — fires onDescribe every 1.5s when autoCapture is on
   useEffect(() => {
-    if (!autoCapture || !ready || !modelReady) return;
-    const id = setInterval(() => describeWhatsFocused(), 1500);
-    return () => clearInterval(id);
-  }, [autoCapture, ready, modelReady, describeWhatsFocused]);
+    if (describeRef) describeRef.current = triggerDescribe;
+  }, [describeRef, triggerDescribe]);
 
+  // Auto-capture timer (shopping mode)
   useEffect(() => {
     if (!autoCapture || !ready) return;
     const id = setInterval(() => handleCapture(), captureInterval);
@@ -290,13 +161,8 @@ export default function CameraView({ onCapture, onError, captureRef, onDescribe,
 
   if (error) {
     return (
-      <div style={{
-        flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
-        padding: 40, textAlign: "center",
-      }}>
-        <p style={{ fontFamily: FONT, fontSize: 18, color: C.danger, lineHeight: 1.6 }}>
-          {error}
-        </p>
+      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 40, textAlign: "center" }}>
+        <p style={{ fontFamily: FONT, fontSize: 18, color: C.danger, lineHeight: 1.6 }}>{error}</p>
       </div>
     );
   }
@@ -304,96 +170,69 @@ export default function CameraView({ onCapture, onError, captureRef, onDescribe,
   return (
     <div style={{ flex: 1, position: "relative", background: "#000" }}>
       <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted
-        aria-hidden
-        style={{
-          width: "100%", height: "100%", objectFit: "cover",
-          position: "absolute", top: 0, left: 0,
-        }}
+        ref={videoRef} autoPlay playsInline muted aria-hidden
+        style={{ width: "100%", height: "100%", objectFit: "cover", position: "absolute", top: 0, left: 0 }}
       />
       <canvas ref={canvasRef} style={{ display: "none" }} />
-      <canvas ref={guidanceCanvasRef} style={{ display: "none" }} />
 
-      {/* Static target zone — visual framing guide only */}
+      {/* Target zone */}
       <div aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
         <div style={{
-          position: "absolute",
-          top: "10%", left: "15%", width: "70%", height: "80%",
-          border: "3px solid rgba(255,255,255,0.35)",
-          borderRadius: 16,
-          boxSizing: "border-box",
+          position: "absolute", top: "10%", left: "15%", width: "70%", height: "80%",
+          border: "3px solid rgba(255,255,255,0.35)", borderRadius: 16, boxSizing: "border-box",
         }} />
       </div>
 
-      {/* Model loading indicator */}
-      {!modelReady && ready && (
-        <div
-          aria-hidden="true"
-          style={{
-            position: "absolute", top: 12, left: 12,
-            background: "rgba(0,0,0,0.7)", borderRadius: 10, padding: "5px 12px",
-          }}
-        >
-          <span style={{ fontFamily: FONT, fontSize: 12, color: C.muted }}>Loading detection…</span>
-        </div>
-      )}
-
-      {/* Flip camera button */}
+      {/* Flip camera */}
       <div style={{ position: "absolute", top: 20, right: 20 }}>
         <button
-          onClick={flipCamera}
-          disabled={!ready}
+          onClick={flipCamera} disabled={!ready}
           aria-label={facingMode === "environment" ? "Switch to front camera" : "Switch to back camera"}
           style={{
             width: 56, height: 56, borderRadius: "50%",
-            background: "rgba(0,0,0,0.55)",
-            border: `2px solid rgba(255,255,255,0.7)`,
+            background: "rgba(0,0,0,0.55)", border: "2px solid rgba(255,255,255,0.7)",
             cursor: ready ? "pointer" : "not-allowed",
             display: "flex", alignItems: "center", justifyContent: "center",
-            opacity: ready ? 1 : 0.4,
-            boxShadow: "0 2px 12px rgba(0,0,0,0.4)",
+            opacity: ready ? 1 : 0.4, boxShadow: "0 2px 12px rgba(0,0,0,0.4)",
           }}
         >
           <svg aria-hidden viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M3 7h2l2-2h10l2 2h2a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/>
-            <path d="M9 13a3 3 0 1 0 6 0"/>
-            <polyline points="15 10 15 13 12 13"/>
+            <path d="M9 13a3 3 0 1 0 6 0"/><polyline points="15 10 15 13 12 13"/>
           </svg>
         </button>
       </div>
 
-      {/* Bottom controls: Describe + Capture */}
+      {/* Bottom controls */}
       <div style={{
         position: "absolute", bottom: 40, left: 0, right: 0,
         display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
       }}>
         <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 28 }}>
-          {/* Describe / What's in Focus button */}
+          {/* Describe button — calls Gemini */}
           <button
-            onClick={describeWhatsFocused}
-            disabled={!ready}
-            aria-label="Describe what is in frame"
+            onClick={triggerDescribe}
+            disabled={!ready || describing}
+            aria-label={describing ? "Describing frame…" : "Describe what is in frame using AI"}
             style={{
               width: 72, height: 72, borderRadius: "50%",
-              background: ready ? "rgba(0,0,0,0.65)" : C.surface,
+              background: describing ? C.focus : "rgba(0,0,0,0.65)",
               border: "3px solid rgba(255,255,255,0.7)",
-              cursor: ready ? "pointer" : "not-allowed",
+              cursor: ready && !describing ? "pointer" : "not-allowed",
               display: "flex", alignItems: "center", justifyContent: "center",
               fontSize: 28, opacity: ready ? 1 : 0.4,
               boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
+              animation: describing ? "pulse 1s ease infinite" : "none",
             }}
           >
-            <span aria-hidden>👁</span>
+            <span aria-hidden>{describing ? "⏳" : "👁"}</span>
+            <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }`}</style>
           </button>
 
-          {/* Primary capture button */}
+          {/* Capture button */}
           <button
-            onClick={handleCapture}
-            disabled={!ready}
-            aria-label="Capture photo. Tap to scan clothing."
+            onClick={handleCapture} disabled={!ready}
+            aria-label="Capture photo"
             style={{
               width: 88, height: 88, borderRadius: "50%",
               background: ready ? C.focus : C.surface,
@@ -408,9 +247,10 @@ export default function CameraView({ onCapture, onError, captureRef, onDescribe,
           </button>
         </div>
 
-        {/* Button labels */}
         <div style={{ display: "flex", justifyContent: "center", gap: 52, paddingTop: 4 }}>
-          <span style={{ fontFamily: FONT, fontSize: 12, color: "rgba(255,255,255,0.7)", width: 72, textAlign: "center" }}>What's in Focus</span>
+          <span style={{ fontFamily: FONT, fontSize: 12, color: "rgba(255,255,255,0.7)", width: 72, textAlign: "center" }}>
+            {describing ? "Describing…" : "What's Here?"}
+          </span>
           <span style={{ fontFamily: FONT, fontSize: 12, color: "rgba(255,255,255,0.7)", width: 88, textAlign: "center" }}>Capture</span>
         </div>
       </div>

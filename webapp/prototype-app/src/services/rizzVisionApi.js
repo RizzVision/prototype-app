@@ -273,6 +273,34 @@ export async function identifyWardrobeItem(base64, wardrobeItems = [], locale = 
 }
 
 /**
+ * Quick scan: identify the single main clothing item in a photo for wardrobe saving.
+ *
+ * @param {string} base64 Raw base64 image string (no data URL prefix).
+ * @param {string} locale Language code.
+ * @returns {Promise<{suggested_name, category, short_description, color}>}
+ */
+export async function quickScan(base64, locale = "en") {
+  const blob = base64ToBlob(base64);
+  const formData = new FormData();
+  formData.append("image", blob, "scan.jpg");
+  formData.append("locale", locale);
+
+  let res;
+  try {
+    res = await fetch(`${BASE_URL}/quick-scan`, { method: "POST", body: formData });
+  } catch {
+    throw new Error("Could not reach the analysis server.");
+  }
+
+  if (res.ok) return await res.json();
+
+  let errorBody;
+  try { errorBody = await res.json(); } catch { throw new Error(`Server error (${res.status}).`); }
+  if (res.status === 422) throw new ImageQualityError(errorBody.user_message || "Photo issue.", errorBody.error_code);
+  throw new Error(errorBody.user_message || `Quick scan failed (${res.status}).`);
+}
+
+/**
  * Lightweight frame description — 1-2 TTS-ready sentences about visible clothing.
  *
  * @param {string} base64 Raw base64 image string (no data URL prefix).
