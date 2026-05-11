@@ -31,6 +31,7 @@ export default function MirrorScreen() {
   const [errorMsg, setErrorMsg] = useState("");
   const [previewUrl, setPreviewUrl] = useState(null);
   const resultRef = useRef(null);
+  const describeRef = useRef(null);
 
   useEffect(() => {
     speak(RESPONSES.mirrorReady);
@@ -108,6 +109,7 @@ export default function MirrorScreen() {
     const handler = (e) => {
       const cmd = e.detail;
       if (cmd.type === "SCAN_AGAIN") reset();
+      else if (cmd.type === "DESCRIBE_FRAME" && phase === "camera") describeRef.current?.();
       else if (cmd.type === "SAVE_ITEM") speak("Mirror mode only gives instant feedback. To save items to your wardrobe, go back and use Scan Clothing instead.");
       else if (cmd.type === "READ_RESULT" && phase === "result") speakLong();
     };
@@ -149,6 +151,7 @@ export default function MirrorScreen() {
             onCapture={handleCapture}
             onDescribe={(desc) => { announce(desc, "polite"); speak(desc); }}
             onError={(msg) => { announce(msg, "assertive"); speak(msg); }}
+            describeRef={describeRef}
           />
         </div>
       </>

@@ -26,6 +26,7 @@ export default function ScanScreen() {
   const [customName, setCustomName] = useState("");
 
   const captureRef = useRef(null);
+  const describeRef = useRef(null);
   const nameInputRef = useRef(null);
 
   useEffect(() => {
@@ -116,7 +117,7 @@ export default function ScanScreen() {
       const cmd = e.detail;
       if (cmd.type === "SAVE_ITEM" && phase === "naming") handleSave();
       else if (cmd.type === "DISCARD_ITEM") reset();
-      else if (cmd.type === "DESCRIBE_FRAME" && phase === "camera") captureRef.current?.();
+      else if (cmd.type === "DESCRIBE_FRAME" && phase === "camera") describeRef.current?.();
     };
     window.addEventListener("voiceCommand", handler);
     return () => window.removeEventListener("voiceCommand", handler);
@@ -145,6 +146,7 @@ export default function ScanScreen() {
             onError={(msg) => { announce(msg, "assertive"); speak(msg); }}
             onDescribe={handleDescribe}
             captureRef={captureRef}
+            describeRef={describeRef}
           />
           <div style={{
             position: "absolute", bottom: 140, left: 0, right: 0,

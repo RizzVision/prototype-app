@@ -37,6 +37,7 @@ export default function ShoppingScreen() {
   const [quickResult, setQuickResult] = useState(null);
   const lastCaptureRef = useRef(0);
   const captureRefInternal = useRef(null);
+  const describeRef = useRef(null);
   const DEBOUNCE_MS = 2500;
 
   useEffect(() => {
@@ -123,6 +124,7 @@ export default function ShoppingScreen() {
       const cmd = e.detail;
       if (cmd.type === "PAUSE_SCAN" && scanning) toggleScanning();
       else if (cmd.type === "RESUME_SCAN" && !scanning) toggleScanning();
+      else if (cmd.type === "DESCRIBE_FRAME") describeRef.current?.();
       else if (cmd.type === "READ_RESULT") speakLastResult();
     };
     window.addEventListener("voiceCommand", handler);
@@ -143,6 +145,7 @@ export default function ShoppingScreen() {
               onCapture={handleCapture}
               onDescribe={handleDescribe}
               captureRef={captureRefInternal}
+              describeRef={describeRef}
               autoCapture={true}
               captureInterval={5000}
               onError={(msg) => { announce(msg, "assertive"); speak(msg); }}
