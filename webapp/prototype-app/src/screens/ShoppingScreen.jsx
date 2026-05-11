@@ -107,8 +107,7 @@ export default function ShoppingScreen() {
   }, [result, speak]);
 
   const handleDescribe = useCallback((desc) => {
-    announce(desc, "polite");
-    speak(desc);
+    announce(desc, "polite"); // screen reader only — no audio clutter during auto-capture
 
     if (desc !== RESPONSES.whatsInFocus.ready) return;
     if (processing) return;
@@ -116,7 +115,7 @@ export default function ShoppingScreen() {
 
     setDetecting(true);
     captureRefInternal.current?.();
-  }, [announce, speak, processing]);
+  }, [announce, processing]);
 
   // Voice commands
   useEffect(() => {
