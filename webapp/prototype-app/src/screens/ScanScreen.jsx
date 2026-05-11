@@ -8,6 +8,7 @@ import { useVoice } from "../contexts/VoiceContext";
 import { useLocale } from "../contexts/LocaleContext";
 import { useWardrobe } from "../contexts/WardrobeContext";
 import { quickScan, ImageQualityError } from "../services/rizzVisionApi";
+import { uploadClothingImage } from "../utils/storage";
 import { SCREENS, C, FONT } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
 
@@ -24,6 +25,7 @@ export default function ScanScreen() {
   const [errorMsg, setErrorMsg] = useState("");
   const [scanResult, setScanResult] = useState(null); // {suggested_name, category, short_description, color}
   const [customName, setCustomName] = useState("");
+  const capturedBase64Ref = useRef(null);
 
   const captureRef = useRef(null);
   const describeRef = useRef(null);
@@ -50,6 +52,7 @@ export default function ScanScreen() {
   const handleCapture = useCallback(async (base64, dataUrl) => {
     setPhase("analyzing");
     setPreviewUrl(dataUrl);
+    capturedBase64Ref.current = base64;
     announce("Identifying your clothing item. Please wait.", "polite");
     speak("Identifying the item. One moment.");
 
@@ -82,6 +85,15 @@ export default function ScanScreen() {
     announce("Saving to your wardrobe.", "polite");
 
     try {
+      let imageUrl = null;
+      if (capturedBase64Ref.current) {
+        try {
+          imageUrl = await uploadClothingImage(capturedBase64Ref.current);
+        } catch {
+          // image upload failure is non-fatal — save text data anyway
+        }
+      }
+
       await addItem({
         name,
         type: scanResult.category || "tops",
@@ -91,6 +103,7 @@ export default function ScanScreen() {
         pattern: "solid",
         gender: "unisex",
         description: scanResult.short_description || "",
+        imageUrl,
       });
 
       const savedMsg = RESPONSES.saved(name);
@@ -108,6 +121,7 @@ export default function ScanScreen() {
     setPreviewUrl(null);
     setErrorMsg("");
     setCustomName("");
+    capturedBase64Ref.current = null;
     setPhase("camera");
   }, []);
 
