@@ -55,7 +55,7 @@ _NON_CLOTHING_PROMPTS = [
     "text, a document, or a screen",
 ]
 
-_CLIP_REJECTION_MARGIN = 0.12
+_CLIP_REJECTION_MARGIN = 0.05
 
 
 class _ClipModel:

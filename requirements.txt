@@ -9,4 +9,5 @@ torch
 torchvision
 transformers
 google-genai
+groq
 python-dotenv
