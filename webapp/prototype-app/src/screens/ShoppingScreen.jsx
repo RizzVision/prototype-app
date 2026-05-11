@@ -35,6 +35,7 @@ export default function ShoppingScreen() {
   const [detecting, setDetecting] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [quickResult, setQuickResult] = useState(null);
+  const [pointAtClothing, setPointAtClothing] = useState(false);
   const lastCaptureRef = useRef(0);
   const captureRefInternal = useRef(null);
   const describeRef = useRef(null);
@@ -55,6 +56,7 @@ export default function ShoppingScreen() {
       setDetecting(false);
       setDetailsOpen(false);
       setQuickResult(null);
+      setPointAtClothing(false);
 
       const [quickSettled, fullSettled] = await Promise.allSettled([
         quickCompatibility(base64, wardrobeItems, language),
@@ -78,8 +80,10 @@ export default function ShoppingScreen() {
           speak(summary);
         }
       } else if (fullSettled.reason instanceof ImageQualityError) {
+        setPointAtClothing(true);
         announce(fullSettled.reason.userMessage, "assertive");
         speak(fullSettled.reason.userMessage);
+        setTimeout(() => setPointAtClothing(false), 3000);
       } else if (quickSettled.status === "rejected") {
         const fallback = "I could not analyze this item right now. Please try again.";
         announce(fallback, "assertive");
@@ -90,6 +94,16 @@ export default function ShoppingScreen() {
       setDetecting(false);
     }
   }, [processing, wardrobeItems, speak, announce, language]);
+
+  const scanNext = useCallback(() => {
+    setResult(null);
+    setQuickResult(null);
+    setPointAtClothing(false);
+    setScanning(true);
+    const msg = RESPONSES.shoppingResumed;
+    speak(msg);
+    announce(msg, "polite");
+  }, [speak, announce]);
 
   const toggleScanning = useCallback(() => {
     setScanning((prev) => {
@@ -138,32 +152,47 @@ export default function ShoppingScreen() {
       <LiveRegions />
       <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
 
-        {/* Camera */}
+        {/* Camera — always mounted; autoCapture controlled by scanning state */}
         <div style={{ flex: 1, position: "relative", minHeight: "40vh" }}>
-          {scanning ? (
-            <CameraView
-              onCapture={handleCapture}
-              onDescribe={handleDescribe}
-              captureRef={captureRefInternal}
-              describeRef={describeRef}
-              autoCapture={true}
-              captureInterval={5000}
-              onError={(msg) => { announce(msg, "assertive"); speak(msg); }}
-            />
-          ) : (
+          <CameraView
+            onCapture={handleCapture}
+            onDescribe={handleDescribe}
+            captureRef={captureRefInternal}
+            describeRef={describeRef}
+            autoCapture={scanning}
+            captureInterval={5000}
+            onError={(msg) => { announce(msg, "assertive"); speak(msg); }}
+          />
+          {!scanning && (
             <div
               role="status"
               aria-label="Scanning paused"
               style={{
-                flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
-                background: "#000", height: "100%", minHeight: "40vh",
+                position: "absolute", inset: 0,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                background: "rgba(0,0,0,0.55)",
               }}
             >
               <p style={{ fontFamily: FONT, fontSize: 20, color: C.muted }}>Paused</p>
             </div>
           )}
 
-          {(detecting || quickResult) && !result && (
+          {pointAtClothing && (
+            <div
+              aria-live="assertive"
+              style={{
+                position: "absolute", top: 12, left: 12,
+                background: "rgba(0,0,0,0.85)", borderRadius: 12, padding: "8px 14px",
+                border: `1px solid ${C.danger}`,
+              }}
+            >
+              <span style={{ fontFamily: FONT, fontSize: 13, color: C.danger }}>
+                Point camera directly at clothing
+              </span>
+            </div>
+          )}
+
+          {!pointAtClothing && (detecting || quickResult) && !result && (
             <div
               aria-live="polite"
               style={{
@@ -358,15 +387,27 @@ export default function ShoppingScreen() {
 
           {/* Controls */}
           <div style={{ display: "flex", gap: 12 }}>
-            <div style={{ flex: 1 }}>
-              <BigButton
-                label={scanning ? "Pause" : "Resume"}
-                hint={scanning ? "Pause automatic scanning" : "Resume automatic scanning"}
-                icon={scanning ? "⏸" : "▶"}
-                variant={scanning ? "danger" : "success"}
-                onClick={toggleScanning}
-              />
-            </div>
+            {result ? (
+              <div style={{ flex: 1 }}>
+                <BigButton
+                  label="Scan Next"
+                  hint="Clear result and scan the next item"
+                  icon="📷"
+                  variant="success"
+                  onClick={scanNext}
+                />
+              </div>
+            ) : (
+              <div style={{ flex: 1 }}>
+                <BigButton
+                  label={scanning ? "Pause" : "Resume"}
+                  hint={scanning ? "Pause automatic scanning" : "Resume automatic scanning"}
+                  icon={scanning ? "⏸" : "▶"}
+                  variant={scanning ? "danger" : "success"}
+                  onClick={toggleScanning}
+                />
+              </div>
+            )}
             <div style={{ flex: 1 }}>
               <BigButton
                 label="Read Again"
