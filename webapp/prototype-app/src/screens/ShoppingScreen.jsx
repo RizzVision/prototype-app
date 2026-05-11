@@ -1,7 +1,7 @@
 /**
  * ShoppingScreen — Live wardrobe-aware shopping assistant.
  *
- * Captures every 8 s and tells the user:
+ * Captures every few seconds and tells the user:
  *   - What the item is
  *   - Whether it matches anything in their wardrobe (or standalone advice if wardrobe is empty)
  *   - Whether it's worth buying
@@ -19,7 +19,7 @@ import { useAnnounce } from "../components/LiveRegions";
 import { useLocale } from "../contexts/LocaleContext";
 import { useVoice } from "../contexts/VoiceContext";
 import { useWardrobe } from "../contexts/WardrobeContext";
-import { analyzeForShopping, quickCompatibility, ImageQualityError } from "../services/rizzVisionApi";
+import { analyzeForShopping, ImageQualityError } from "../services/rizzVisionApi";
 import { C, FONT } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
 
@@ -39,7 +39,8 @@ export default function ShoppingScreen() {
   const lastCaptureRef = useRef(0);
   const captureRefInternal = useRef(null);
   const describeRef = useRef(null);
-  const DEBOUNCE_MS = 2500;
+  const lastSpokenVerdictRef = useRef("");
+  const DEBOUNCE_MS = 3500;
 
   useEffect(() => {
     const msg = RESPONSES.shoppingStart;
@@ -49,42 +50,37 @@ export default function ShoppingScreen() {
 
   const handleCapture = useCallback(async (base64) => {
     if (processing) return;
+    if (Date.now() - lastCaptureRef.current < DEBOUNCE_MS) return;
+    lastCaptureRef.current = Date.now();
     setProcessing(true);
 
     try {
-      lastCaptureRef.current = Date.now();
       setDetecting(false);
-      setDetailsOpen(false);
       setQuickResult(null);
       setPointAtClothing(false);
 
-      const [quickSettled, fullSettled] = await Promise.allSettled([
-        quickCompatibility(base64, wardrobeItems, language),
-        analyzeForShopping(base64, wardrobeItems, language),
-      ]);
+      const analysis = await analyzeForShopping(base64, wardrobeItems, language);
+      setResult(analysis);
+      setDetailsOpen(false);
 
-      if (quickSettled.status === "fulfilled") {
-        setQuickResult(quickSettled.value);
-        speak(quickSettled.value.reason);
-        announce(quickSettled.value.reason, "polite");
-      }
+      const verdictText = analysis.speech_segments?.find((s) => s.id === "verdict")?.text;
+      const itemText = analysis.speech_segments?.find((s) => s.id === "item")?.text;
+      const spokenSummary = [itemText, verdictText].filter(Boolean).join("  ");
+      const nextSpokenKey = `${itemText || ""}|${verdictText || ""}`;
 
-      if (fullSettled.status === "fulfilled") {
-        const analysis = fullSettled.value;
-        setResult(analysis);
-        setScanning(false);
-        setQuickResult(null);
-        const summary = (analysis.speech_segments ?? []).map((s) => s.text).join("  ");
-        if (summary) {
-          announce(summary, "polite");
-          speak(summary);
+      if (spokenSummary) {
+        announce(spokenSummary, "polite");
+        if (nextSpokenKey !== lastSpokenVerdictRef.current) {
+          speak(spokenSummary);
+          lastSpokenVerdictRef.current = nextSpokenKey;
         }
-      } else if (fullSettled.reason instanceof ImageQualityError) {
+      }
+    } catch (err) {
+      if (err instanceof ImageQualityError) {
         setPointAtClothing(true);
-        announce(fullSettled.reason.userMessage, "assertive");
-        speak(fullSettled.reason.userMessage);
+        announce(err.userMessage, "assertive");
         setTimeout(() => setPointAtClothing(false), 3000);
-      } else if (quickSettled.status === "rejected") {
+      } else {
         const fallback = "I could not analyze this item right now. Please try again.";
         announce(fallback, "assertive");
         speak(fallback);
@@ -100,6 +96,7 @@ export default function ShoppingScreen() {
     setQuickResult(null);
     setPointAtClothing(false);
     setScanning(true);
+    lastSpokenVerdictRef.current = "";
     const msg = RESPONSES.shoppingResumed;
     speak(msg);
     announce(msg, "polite");
@@ -390,8 +387,8 @@ export default function ShoppingScreen() {
             {result ? (
               <div style={{ flex: 1 }}>
                 <BigButton
-                  label="Scan Next"
-                  hint="Clear result and scan the next item"
+                  label="Clear Result"
+                  hint="Clear the visible result while live scanning continues"
                   icon="📷"
                   variant="success"
                   onClick={scanNext}

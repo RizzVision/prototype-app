@@ -11,7 +11,7 @@ All analysis is LLM-driven. The pipeline is:
 import logging
 import time
 
-from fastapi import APIRouter, UploadFile, File, Form
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from pydantic import BaseModel
 
 from app.errors.handlers import ERROR_MESSAGES
@@ -78,7 +78,7 @@ async def analyze_outfit(
 @router.post("/shopping-analyze")
 async def shopping_analyze(
     image: UploadFile = File(...),
-    wardrobe: str = "",
+    wardrobe: str = Form(""),
     locale: str = Form("en"),
 ):
     """
@@ -103,6 +103,12 @@ async def shopping_analyze(
     img = ingest_image(raw_bytes)
     check_image_quality(img)
     segmentation_model.verify_clothing_for_shopping(img)
+
+    if not settings.GROQ_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="Shopping analysis is not configured yet. Please set the Groq API key.",
+        )
 
     has_wardrobe = bool(wardrobe and wardrobe.strip() and wardrobe.strip() != "[]")
 
@@ -159,6 +165,7 @@ Return ONLY valid JSON:
         }],
         max_tokens=400,
         temperature=0.4,
+        response_format={"type": "json_object"},
     )
 
     try:
@@ -207,7 +214,7 @@ async def quick_compatibility(
 ):
     """
     Fast wardrobe compatibility verdict. Returns only a verdict + one-sentence reason.
-    Uses a short Gemini prompt (max 80 tokens) for lower latency than /shopping-analyze.
+    Uses a short Groq vision prompt (max 80 tokens) for lower latency than /shopping-analyze.
     """
     from groq import Groq
     from app.core.config import settings
@@ -227,6 +234,12 @@ async def quick_compatibility(
     img = ingest_image(raw_bytes)
     check_image_quality(img)
     segmentation_model.verify_clothing_for_shopping(img)
+
+    if not settings.GROQ_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="Shopping analysis is not configured yet. Please set the Groq API key.",
+        )
 
     has_wardrobe = bool(wardrobe and wardrobe.strip() and wardrobe.strip() != "[]")
 
@@ -259,6 +272,7 @@ Return ONLY valid JSON: {{"verdict": "works|clashes|style_tip_only", "reason": "
         }],
         max_tokens=80,
         temperature=0.3,
+        response_format={"type": "json_object"},
     )
 
     try:

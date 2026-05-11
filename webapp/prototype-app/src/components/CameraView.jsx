@@ -34,11 +34,27 @@ export default function CameraView({
       streamRef.current = stream;
       const video = videoRef.current;
       if (!video) return;
+      setError(null);
+      setReady(false);
       video.srcObject = stream;
-      const markReady = () => { if (video.videoWidth > 0) setReady(true); };
+      video.muted = true;
+      video.playsInline = true;
+
+      let rafId = null;
+      const markReady = () => {
+        if (video.videoWidth > 0 && video.videoHeight > 0) {
+          setReady(true);
+          if (rafId) cancelAnimationFrame(rafId);
+          return;
+        }
+        rafId = requestAnimationFrame(markReady);
+      };
+
+      video.addEventListener("loadedmetadata", markReady, { once: true });
       video.addEventListener("canplay", markReady, { once: true });
       video.addEventListener("loadeddata", markReady, { once: true });
-      video.play().catch(() => {});
+      video.play().then(markReady).catch(markReady);
+      markReady();
     };
 
     const showError = (err) => {
@@ -83,6 +99,7 @@ export default function CameraView({
   const captureFrame = useCallback(() => {
     if (!videoRef.current || !canvasRef.current) return null;
     const video = videoRef.current;
+    if (!video.videoWidth || !video.videoHeight) return null;
     const canvas = canvasRef.current;
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
@@ -104,7 +121,9 @@ export default function CameraView({
       };
       playClick(1200, ctx.currentTime, 0.4);
       playClick(900, ctx.currentTime + 0.05, 0.3);
-    } catch (_) {}
+    } catch {
+      // Audio feedback is optional; camera capture should still work without it.
+    }
   };
 
   const onCaptureRef = useRef(onCapture);
