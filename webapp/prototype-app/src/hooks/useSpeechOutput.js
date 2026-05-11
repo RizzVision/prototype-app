@@ -2,16 +2,25 @@ import { useState, useRef, useCallback, useEffect } from "react";
 
 const synth = typeof window !== "undefined" ? window.speechSynthesis : null;
 
-// Ranked preference: best quality Indian English voices first, then general English
+// Ranked by voice quality — checked before any locale fallback for English.
+// Neural/online voices (Google, Microsoft Edge) are significantly clearer
+// than the default system en-IN voice on most Android devices.
 const EN_VOICE_PREFERENCE = [
-  "Rishi",                    // iOS 16+ Indian English (male)
-  "Neel",                     // iOS 17+ Indian English (male)
-  "Veena",                    // macOS Indian English (female)
-  "Google हिन्दी",            // skip — wrong language, intentionally unreachable
-  "Google UK English Female", // Android Chrome — high quality
+  // Microsoft Edge neural voices (Windows / Edge browser) — highest quality
+  "Microsoft Aria Online (Natural) - English (United States)",
+  "Microsoft Jenny Online (Natural) - English (United States)",
+  "Microsoft Ravi Online (Natural) - English (India)",
+  "Microsoft Neerja Online (Natural) - English (India)",
+  // iOS / macOS
+  "Rishi",   // iOS 16+ Indian English
+  "Neel",    // iOS 17+ Indian English
+  "Veena",   // macOS Indian English (female)
+  "Samantha", // iOS/macOS en-US
+  "Alex",    // macOS en-US
+  // Android Chrome — Google online voices
+  "Google UK English Female",
   "Google UK English Male",
-  "Samantha",                 // iOS/macOS en-US — high quality fallback
-  "Alex",                     // macOS en-US — highest quality on Apple
+  "Google US English",
 ];
 
 const LANGUAGE_VOICE_HINTS = {
@@ -32,26 +41,37 @@ function pickBestVoice(speechLocale = "en-IN") {
   if (!voices.length) return null;
 
   const language = speechLocale.toLowerCase().split("-")[0];
-  const localeMatch = voices.find((voice) => voice.lang.toLowerCase() === speechLocale.toLowerCase());
-  if (localeMatch) return localeMatch;
 
-  const localePrefix = voices.find((voice) => voice.lang.toLowerCase().startsWith(`${language}-`));
-  if (localePrefix) return localePrefix;
-
-  const hintedVoices = LANGUAGE_VOICE_HINTS[language] || [];
-  for (const name of hintedVoices) {
-    const found = voices.find((voice) => voice.name === name);
-    if (found) return found;
-  }
-
+  // For English: always check the quality preference list FIRST.
+  // The default locale match often returns a robotic en-IN system voice
+  // that sounds worse than the Google/Microsoft online voices.
   if (language === "en") {
     for (const name of EN_VOICE_PREFERENCE) {
-      const found = voices.find((voice) => voice.name === name);
+      const found = voices.find((v) => v.name === name);
       if (found) return found;
     }
+    // Fall back to any en-IN or en-* voice
+    return (
+      voices.find((v) => v.lang.toLowerCase() === speechLocale.toLowerCase()) ??
+      voices.find((v) => v.lang.toLowerCase().startsWith("en-")) ??
+      voices[0] ??
+      null
+    );
   }
 
-  return voices.find((voice) => voice.lang.toLowerCase().startsWith("en")) ?? voices[0] ?? null;
+  // Non-English: use the hints list, then locale match
+  const hintedVoices = LANGUAGE_VOICE_HINTS[language] || [];
+  for (const name of hintedVoices) {
+    const found = voices.find((v) => v.name === name);
+    if (found) return found;
+  }
+  return (
+    voices.find((v) => v.lang.toLowerCase() === speechLocale.toLowerCase()) ??
+    voices.find((v) => v.lang.toLowerCase().startsWith(`${language}-`)) ??
+    voices.find((v) => v.lang.toLowerCase().startsWith("en-")) ??
+    voices[0] ??
+    null
+  );
 }
 
 // Exported for use outside the hook (e.g., stopping speech on navigation)
@@ -88,7 +108,7 @@ export default function useSpeechOutput({ speechLocale = "en-IN" } = {}) {
     synth.cancel();
 
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1.0;
+    utterance.rate = 0.92;  // slightly slower = clearer on mobile TTS engines
     utterance.pitch = 1.0;
     utterance.volume = 1.0;
     utterance.lang = speechLocale;
