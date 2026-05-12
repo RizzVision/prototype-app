@@ -17,33 +17,71 @@ export default function CameraView({
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const facingModeRef = useRef("environment");
+  const retryRef = useRef(0);
+  const startIdRef = useRef(0);
+  const blackFrameCheckRef = useRef(null);
+  const activeDeviceIdRef = useRef(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState(null);
+  const [permissionDenied, setPermissionDenied] = useState(false);
   const [facingMode, setFacingMode] = useState("environment");
   const [describing, setDescribing] = useState(false);
+  const [cameraStatus, setCameraStatus] = useState("Starting camera...");
+  const [frameVisible, setFrameVisible] = useState(false);
 
   const onErrorRef = useRef(onError);
   useEffect(() => { onErrorRef.current = onError; }, [onError]);
   const onDescribeRef = useRef(onDescribe);
   useEffect(() => { onDescribeRef.current = onDescribe; }, [onDescribe]);
 
-  const startCamera = useCallback(async (facing) => {
+  const requestStream = useCallback(async (constraints, timeoutMs = 7000) => {
+    let timeoutId;
+    const timeout = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new DOMException("Camera request timed out.", "TimeoutError"));
+      }, timeoutMs);
+    });
+
+    try {
+      return await Promise.race([
+        navigator.mediaDevices.getUserMedia(constraints),
+        timeout,
+      ]);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }, []);
+
+  const startCamera = useCallback(async (facing, deviceId) => {
     const mode = facing ?? facingModeRef.current;
+    const startId = startIdRef.current + 1;
+    startIdRef.current = startId;
+    setCameraStatus("Starting camera...");
+    setFrameVisible(false);
 
     const attachStream = (stream) => {
+      if (startId !== startIdRef.current) {
+        stream.getTracks().forEach(t => t.stop());
+        return;
+      }
       streamRef.current = stream;
       const video = videoRef.current;
       if (!video) return;
       setError(null);
+      setPermissionDenied(false);
       setReady(false);
+      setFrameVisible(false);
       video.srcObject = stream;
       video.muted = true;
       video.playsInline = true;
+      video.setAttribute("playsinline", "");
+      video.setAttribute("webkit-playsinline", "");
 
       let rafId = null;
       const markReady = () => {
         if (video.videoWidth > 0 && video.videoHeight > 0) {
           setReady(true);
+          setCameraStatus("");
           if (rafId) cancelAnimationFrame(rafId);
           return;
         }
@@ -55,37 +93,67 @@ export default function CameraView({
       video.addEventListener("loadeddata", markReady, { once: true });
       video.play().then(markReady).catch(markReady);
       markReady();
+
+      setTimeout(() => {
+        if (startId === startIdRef.current && (!video.videoWidth || !video.videoHeight)) {
+          setCameraStatus("Camera opened, but video has not started. Tap Start camera.");
+        }
+      }, 2500);
     };
 
     const showError = (err) => {
       const msg = err.name === "NotAllowedError"
         ? "Camera permission denied. Please allow camera access."
         : "Could not access camera. Please check your device settings.";
+      setPermissionDenied(err.name === "NotAllowedError");
       setError(msg);
       if (onErrorRef.current) onErrorRef.current(msg);
     };
 
+    const stopCurrentStream = () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop());
+        streamRef.current = null;
+      }
+    };
+
+    const makeConstraints = () => ({
+      video: deviceId
+        ? { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } }
+        : { facingMode: { ideal: mode }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
+    });
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: mode }, width: { ideal: 1280 }, height: { ideal: 960 } },
-      });
+      stopCurrentStream();
+      const stream = await requestStream(makeConstraints());
+      activeDeviceIdRef.current = stream.getVideoTracks()[0]?.getSettings?.().deviceId || deviceId || null;
       attachStream(stream);
     } catch (err) {
       if (err.name === "NotAllowedError") { showError(err); return; }
       try {
-        attachStream(await navigator.mediaDevices.getUserMedia({ video: true }));
+        setCameraStatus("Trying default camera...");
+        stopCurrentStream();
+        const stream = await requestStream({ video: true });
+        activeDeviceIdRef.current = stream.getVideoTracks()[0]?.getSettings?.().deviceId || null;
+        attachStream(stream);
       } catch (fallback) {
         showError(fallback);
       }
     }
-  }, []);
+  }, [requestStream]);
 
   const stopCamera = useCallback(() => {
+    startIdRef.current += 1;
+    if (blackFrameCheckRef.current) {
+      clearTimeout(blackFrameCheckRef.current);
+      blackFrameCheckRef.current = null;
+    }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(t => t.stop());
       streamRef.current = null;
     }
     setReady(false);
+    setFrameVisible(false);
   }, []);
 
   const flipCamera = useCallback(async () => {
@@ -93,8 +161,40 @@ export default function CameraView({
     facingModeRef.current = newMode;
     setFacingMode(newMode);
     stopCamera();
+    retryRef.current = 0;
+    activeDeviceIdRef.current = null;
     await startCamera(newMode);
   }, [stopCamera, startCamera]);
+
+  const resumeVideo = useCallback(async () => {
+    const video = videoRef.current;
+    if (!video) {
+      await startCamera(facingModeRef.current);
+      return;
+    }
+
+    try {
+      await video.play();
+      if (video.videoWidth && video.videoHeight) {
+        setReady(true);
+        setCameraStatus("");
+      } else if (!streamRef.current) {
+        await startCamera(facingModeRef.current);
+      } else {
+        setCameraStatus("Waiting for camera frames...");
+      }
+    } catch {
+      await startCamera(facingModeRef.current);
+    }
+  }, [startCamera]);
+
+  const retryCamera = useCallback(async () => {
+    setError(null);
+    setPermissionDenied(false);
+    retryRef.current = 0;
+    activeDeviceIdRef.current = null;
+    await startCamera(facingModeRef.current);
+  }, [startCamera]);
 
   const captureFrame = useCallback(() => {
     if (!videoRef.current || !canvasRef.current) return null;
@@ -106,6 +206,59 @@ export default function CameraView({
     canvas.getContext("2d").drawImage(video, 0, 0);
     return canvas.toDataURL("image/jpeg", 0.85);
   }, []);
+
+  const getFrameBrightness = useCallback(() => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas || !video.videoWidth || !video.videoHeight) return null;
+
+    const size = 24;
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(video, 0, 0, size, size);
+    const pixels = ctx.getImageData(0, 0, size, size).data;
+    let total = 0;
+    for (let i = 0; i < pixels.length; i += 4) {
+      total += 0.2126 * pixels[i] + 0.7152 * pixels[i + 1] + 0.0722 * pixels[i + 2];
+    }
+    return total / (pixels.length / 4);
+  }, []);
+
+  const recoverFromBlackFrame = useCallback(async () => {
+    const devices = await navigator.mediaDevices?.enumerateDevices?.().catch(() => []) || [];
+    const cameras = devices.filter((device) => device.kind === "videoinput");
+    const currentIndex = cameras.findIndex((device) => device.deviceId === activeDeviceIdRef.current);
+    const nextDevice = cameras.length > 1
+      ? cameras[(currentIndex + 1 + cameras.length) % cameras.length]
+      : null;
+
+    if (retryRef.current >= Math.max(2, cameras.length + 1)) {
+      setCameraStatus("Camera is open but the image is black. Try the camera switch button or check camera privacy settings.");
+      return;
+    }
+
+    retryRef.current += 1;
+    setCameraStatus("Camera image is black. Trying another camera...");
+
+    if (nextDevice && nextDevice.deviceId !== activeDeviceIdRef.current) {
+      stopCamera();
+      await startCamera(undefined, nextDevice.deviceId);
+      return;
+    }
+
+    const nextMode = retryRef.current % 2 === 1
+      ? (facingModeRef.current === "environment" ? "user" : "environment")
+      : undefined;
+
+    if (nextMode) {
+      facingModeRef.current = nextMode;
+      setFacingMode(nextMode);
+    }
+
+    stopCamera();
+    await startCamera(nextMode);
+  }, [startCamera, stopCamera]);
 
   const playShutterSound = () => {
     try {
@@ -164,6 +317,27 @@ export default function CameraView({
   }, [startCamera, stopCamera]);
 
   useEffect(() => {
+    if (!ready) return;
+    if (blackFrameCheckRef.current) clearTimeout(blackFrameCheckRef.current);
+
+    blackFrameCheckRef.current = setTimeout(() => {
+      const brightness = getFrameBrightness();
+      if (brightness !== null && brightness < 3) {
+        setFrameVisible(false);
+        recoverFromBlackFrame();
+      } else if (brightness !== null) {
+        retryRef.current = 0;
+        setFrameVisible(true);
+        setCameraStatus("");
+      }
+    }, 1200);
+
+    return () => {
+      if (blackFrameCheckRef.current) clearTimeout(blackFrameCheckRef.current);
+    };
+  }, [ready, getFrameBrightness, recoverFromBlackFrame]);
+
+  useEffect(() => {
     if (captureRef) captureRef.current = handleCapture;
   }, [captureRef, handleCapture]);
 
@@ -173,15 +347,38 @@ export default function CameraView({
 
   // Auto-capture timer (shopping mode)
   useEffect(() => {
-    if (!autoCapture || !ready) return;
+    if (!autoCapture || !ready || !frameVisible) return;
     const id = setInterval(() => handleCapture(), captureInterval);
     return () => clearInterval(id);
-  }, [autoCapture, captureInterval, ready, handleCapture]);
+  }, [autoCapture, captureInterval, ready, frameVisible, handleCapture]);
 
   if (error) {
     return (
-      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 40, textAlign: "center" }}>
-        <p style={{ fontFamily: FONT, fontSize: 18, color: C.danger, lineHeight: 1.6 }}>{error}</p>
+      <div style={{
+        flex: 1, display: "flex", flexDirection: "column",
+        alignItems: "center", justifyContent: "center",
+        padding: 32, textAlign: "center", gap: 16,
+      }}>
+        <p style={{ fontFamily: FONT, fontSize: 18, color: C.danger, lineHeight: 1.6, margin: 0 }}>
+          {error}
+        </p>
+        {permissionDenied && (
+          <p style={{ fontFamily: FONT, fontSize: 14, color: C.muted, lineHeight: 1.6, margin: 0 }}>
+            Allow camera for {window.location.origin}, then refresh or tap retry.
+          </p>
+        )}
+        <button
+          type="button"
+          onClick={retryCamera}
+          style={{
+            fontFamily: FONT, fontSize: 16, fontWeight: 800,
+            color: "#000", background: C.focus,
+            border: "none", borderRadius: 12,
+            padding: "12px 18px", cursor: "pointer",
+          }}
+        >
+          Retry camera
+        </button>
       </div>
     );
   }
@@ -274,12 +471,28 @@ export default function CameraView({
         </div>
       </div>
 
-      {!ready && !error && (
+      {(!ready || cameraStatus) && !error && (
         <div style={{
           position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)",
-          fontFamily: FONT, fontSize: 18, color: C.muted,
+          width: "80%", textAlign: "center",
+          fontFamily: FONT, fontSize: 18, color: C.muted, lineHeight: 1.5,
+          display: "flex", flexDirection: "column", alignItems: "center", gap: 16,
         }}>
-          Starting camera...
+          <span>{cameraStatus || "Starting camera..."}</span>
+          {cameraStatus && cameraStatus !== "Starting camera..." && (
+            <button
+              type="button"
+              onClick={resumeVideo}
+              style={{
+                fontFamily: FONT, fontSize: 16, fontWeight: 800,
+                color: "#000", background: C.focus,
+                border: "none", borderRadius: 12,
+                padding: "12px 18px", cursor: "pointer",
+              }}
+            >
+              Start camera
+            </button>
+          )}
         </div>
       )}
     </div>
