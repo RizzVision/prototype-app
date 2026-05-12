@@ -11,6 +11,7 @@ export default function CameraView({
   onDescribe,
   autoCapture = false,
   captureInterval = 5000,
+  showControls = true,
 }) {
   const { language } = useLocale();
   const videoRef = useRef(null);
@@ -419,57 +420,58 @@ export default function CameraView({
         </button>
       </div>
 
-      {/* Bottom controls */}
-      <div style={{
-        position: "absolute", bottom: 40, left: 0, right: 0,
-        display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
-      }}>
-        <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 28 }}>
-          {/* Describe button — calls Gemini */}
-          <button
-            onClick={triggerDescribe}
-            disabled={!ready || describing}
-            aria-label={describing ? "Describing frame…" : "Describe what is in frame using AI"}
-            style={{
-              width: 72, height: 72, borderRadius: "50%",
-              background: describing ? C.focus : "rgba(0,0,0,0.65)",
-              border: "3px solid rgba(255,255,255,0.7)",
-              cursor: ready && !describing ? "pointer" : "not-allowed",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 28, opacity: ready ? 1 : 0.4,
-              boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
-              animation: describing ? "pulse 1s ease infinite" : "none",
-            }}
-          >
-            <span aria-hidden>{describing ? "⏳" : "👁"}</span>
-            <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }`}</style>
-          </button>
+      {showControls && (
+        <div style={{
+          position: "absolute", bottom: 40, left: 0, right: 0,
+          display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
+        }}>
+          <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 28 }}>
+            {/* Describe button — calls Gemini */}
+            <button
+              onClick={triggerDescribe}
+              disabled={!ready || describing}
+              aria-label={describing ? "Describing frame…" : "Describe what is in frame using AI"}
+              style={{
+                width: 72, height: 72, borderRadius: "50%",
+                background: describing ? C.focus : "rgba(0,0,0,0.65)",
+                border: "3px solid rgba(255,255,255,0.7)",
+                cursor: ready && !describing ? "pointer" : "not-allowed",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 28, opacity: ready ? 1 : 0.4,
+                boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
+                animation: describing ? "pulse 1s ease infinite" : "none",
+              }}
+            >
+              <span aria-hidden>{describing ? "⏳" : "👁"}</span>
+              <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }`}</style>
+            </button>
 
-          {/* Capture button */}
-          <button
-            onClick={handleCapture} disabled={!ready}
-            aria-label="Capture photo"
-            style={{
-              width: 88, height: 88, borderRadius: "50%",
-              background: ready ? C.focus : C.surface,
-              border: `4px solid ${C.white}`,
-              cursor: ready ? "pointer" : "not-allowed",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 36, color: "#000", fontWeight: 900,
-              boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
-            }}
-          >
-            <span aria-hidden>📸</span>
-          </button>
-        </div>
+            {/* Capture button */}
+            <button
+              onClick={handleCapture} disabled={!ready}
+              aria-label="Capture photo"
+              style={{
+                width: 88, height: 88, borderRadius: "50%",
+                background: ready ? C.focus : C.surface,
+                border: `4px solid ${C.white}`,
+                cursor: ready ? "pointer" : "not-allowed",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 36, color: "#000", fontWeight: 900,
+                boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
+              }}
+            >
+              <span aria-hidden>📸</span>
+            </button>
+          </div>
 
-        <div style={{ display: "flex", justifyContent: "center", gap: 52, paddingTop: 4 }}>
-          <span style={{ fontFamily: FONT, fontSize: 12, color: "rgba(255,255,255,0.7)", width: 72, textAlign: "center" }}>
-            {describing ? "Describing…" : "What's Here?"}
-          </span>
-          <span style={{ fontFamily: FONT, fontSize: 12, color: "rgba(255,255,255,0.7)", width: 88, textAlign: "center" }}>Capture</span>
+          <div style={{ display: "flex", justifyContent: "center", gap: 52, paddingTop: 4 }}>
+            <span style={{ fontFamily: FONT, fontSize: 12, color: "rgba(255,255,255,0.7)", width: 72, textAlign: "center" }}>
+              {describing ? "Describing…" : "What's Here?"}
+            </span>
+            <span style={{ fontFamily: FONT, fontSize: 12, color: "rgba(255,255,255,0.7)", width: 88, textAlign: "center" }}>Capture</span>
+          </div>
         </div>
-      </div>
+      )}
 
       {(!ready || cameraStatus) && !error && (
         <div style={{
