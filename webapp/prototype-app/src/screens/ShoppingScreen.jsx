@@ -1,27 +1,21 @@
 /**
- * ShoppingScreen — Live wardrobe-aware shopping assistant.
+ * ShoppingScreen — real-time wardrobe-aware shopping assistant.
  *
- * Captures every 8 s and tells the user:
- *   - What the item is
- *   - Whether it matches anything in their wardrobe (or standalone advice if wardrobe is empty)
- *   - Whether it's worth buying
- *
- * After a result, the user can ask one follow-up question via voice or text input.
- * Adding items to the wardrobe is intentionally disabled in this mode.
+ * Keeps the camera feed mounted and samples frames for Groq/Llama analysis.
+ * There is no manual capture path in this mode.
  */
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import Screen from "../components/Screen";
-import BigButton from "../components/BigButton";
 import CameraView from "../components/CameraView";
 import ContextChat from "../components/ContextChat";
 import { useAnnounce } from "../components/LiveRegions";
 import { useLocale } from "../contexts/LocaleContext";
 import { useVoice } from "../contexts/VoiceContext";
 import { useWardrobe } from "../contexts/WardrobeContext";
-import { analyzeForShopping, quickCompatibility, ImageQualityError } from "../services/rizzVisionApi";
+import { analyzeForShopping, ImageQualityError } from "../services/rizzVisionApi";
 import { C, FONT } from "../utils/constants";
-import { RESPONSES } from "../voice/voiceResponses";
+
+const LIVE_CAPTURE_INTERVAL_MS = 6500;
 
 export default function ShoppingScreen() {
   const { language } = useLocale();
@@ -29,258 +23,210 @@ export default function ShoppingScreen() {
   const { announce, LiveRegions } = useAnnounce();
   const { items: wardrobeItems } = useWardrobe();
 
-  const [scanning, setScanning] = useState(true);
+  const [liveEnabled, setLiveEnabled] = useState(true);
+  const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState(null);
-  const [processing, setProcessing] = useState(false);
-  const [detecting, setDetecting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [quickResult, setQuickResult] = useState(null);
-  const lastCaptureRef = useRef(0);
-  const captureRefInternal = useRef(null);
-  const describeRef = useRef(null);
-  const DEBOUNCE_MS = 2500;
+
+  const analyzingRef = useRef(false);
+  const lastSpokenKeyRef = useRef("");
+
+  const emptyWardrobe = wardrobeItems.length === 0;
 
   useEffect(() => {
-    const msg = RESPONSES.shoppingStart;
+    const msg = emptyWardrobe
+      ? "Live shopping mode active. I will use Llama to describe clothing and give style advice."
+      : "Live shopping mode active. I will use Llama to compare clothing with your wardrobe.";
     speak(msg);
     announce(msg, "polite");
-  }, [speak, announce]);
+  }, [emptyWardrobe, speak, announce]);
 
-  const handleCapture = useCallback(async (base64) => {
-    if (processing) return;
-    setProcessing(true);
+  const buildSpeechSummary = useCallback((analysis) => {
+    const item = analysis.speech_segments?.find((segment) => segment.id === "item")?.text;
+    const match = analysis.speech_segments?.find((segment) => segment.id === "match")?.text;
+    const verdict = analysis.speech_segments?.find((segment) => segment.id === "verdict")?.text;
+    return [item, match, verdict].filter(Boolean).join("  ");
+  }, []);
+
+  const speakAnalysisIfNew = useCallback((analysis) => {
+    const summary = buildSpeechSummary(analysis);
+    if (!summary) return;
+
+    const key = summary.toLowerCase().replace(/\s+/g, " ").trim();
+    announce(summary, "polite");
+    if (key !== lastSpokenKeyRef.current) {
+      speak(summary);
+      lastSpokenKeyRef.current = key;
+    }
+  }, [announce, buildSpeechSummary, speak]);
+
+  const handleLiveFrame = useCallback(async (base64) => {
+    if (!liveEnabled || analyzingRef.current) return;
+
+    analyzingRef.current = true;
+    setAnalyzing(true);
+    setErrorMsg("");
 
     try {
-      lastCaptureRef.current = Date.now();
-      setDetecting(false);
+      const analysis = await analyzeForShopping(base64, wardrobeItems, language);
+      setResult(analysis);
       setDetailsOpen(false);
-      setQuickResult(null);
-
-      const [quickSettled, fullSettled] = await Promise.allSettled([
-        quickCompatibility(base64, wardrobeItems, language),
-        analyzeForShopping(base64, wardrobeItems, language),
-      ]);
-
-      if (quickSettled.status === "fulfilled") {
-        setQuickResult(quickSettled.value);
-        speak(quickSettled.value.reason);
-        announce(quickSettled.value.reason, "polite");
-      }
-
-      if (fullSettled.status === "fulfilled") {
-        const analysis = fullSettled.value;
-        setResult(analysis);
-        setScanning(false);
-        setQuickResult(null);
-        const summary = (analysis.speech_segments ?? []).map((s) => s.text).join("  ");
-        if (summary) {
-          announce(summary, "polite");
-          speak(summary);
-        }
-      } else if (fullSettled.reason instanceof ImageQualityError) {
-        announce(fullSettled.reason.userMessage, "assertive");
-        speak(fullSettled.reason.userMessage);
-      } else if (quickSettled.status === "rejected") {
-        const fallback = "I could not analyze this item right now. Please try again.";
-        announce(fallback, "assertive");
-        speak(fallback);
+      speakAnalysisIfNew(analysis);
+    } catch (err) {
+      if (err instanceof ImageQualityError) {
+        setErrorMsg(err.userMessage);
+        announce(err.userMessage, "polite");
+      } else {
+        const msg = "Live shopping analysis is having trouble. I will keep trying.";
+        setErrorMsg(msg);
+        announce(msg, "polite");
       }
     } finally {
-      setProcessing(false);
-      setDetecting(false);
+      analyzingRef.current = false;
+      setAnalyzing(false);
     }
-  }, [processing, wardrobeItems, speak, announce, language]);
+  }, [announce, language, liveEnabled, speakAnalysisIfNew, wardrobeItems]);
 
-  const toggleScanning = useCallback(() => {
-    setScanning((prev) => {
-      const next = !prev;
-      const msg = next ? RESPONSES.shoppingResumed : RESPONSES.shoppingPaused;
+  const toggleLive = useCallback(() => {
+    setLiveEnabled((enabled) => {
+      const next = !enabled;
+      const msg = next ? "Live shopping assistance resumed." : "Live shopping assistance paused.";
       speak(msg);
       announce(msg, "polite");
       return next;
     });
-  }, [speak, announce]);
+  }, [announce, speak]);
 
   const speakLastResult = useCallback(() => {
-    if (result?.speech_segments?.length) {
-      speak(result.speech_segments.map((s) => s.text).join("  "));
+    if (result) {
+      const summary = buildSpeechSummary(result);
+      if (summary) speak(summary);
+    } else if (errorMsg) {
+      speak(errorMsg);
     }
-  }, [result, speak]);
+  }, [buildSpeechSummary, errorMsg, result, speak]);
 
-  const handleDescribe = useCallback((desc) => {
-    announce(desc, "polite"); // screen reader only — no audio clutter during auto-capture
-
-    if (desc !== RESPONSES.whatsInFocus.ready) return;
-    if (processing) return;
-    if (Date.now() - lastCaptureRef.current < DEBOUNCE_MS) return;
-
-    setDetecting(true);
-    captureRefInternal.current?.();
-  }, [announce, processing]);
-
-  // Voice commands
   useEffect(() => {
     const handler = (e) => {
       const cmd = e.detail;
-      if (cmd.type === "PAUSE_SCAN" && scanning) toggleScanning();
-      else if (cmd.type === "RESUME_SCAN" && !scanning) toggleScanning();
-      else if (cmd.type === "DESCRIBE_FRAME") describeRef.current?.();
+      if (cmd.type === "PAUSE_SCAN" && liveEnabled) toggleLive();
+      else if (cmd.type === "RESUME_SCAN" && !liveEnabled) toggleLive();
       else if (cmd.type === "READ_RESULT") speakLastResult();
     };
     window.addEventListener("voiceCommand", handler);
     return () => window.removeEventListener("voiceCommand", handler);
-  }, [scanning, toggleScanning, speakLastResult]);
+  }, [liveEnabled, speakLastResult, toggleLive]);
 
-  const emptyWardrobe = wardrobeItems.length === 0;
+  const verdictSeg = result?.speech_segments?.find((segment) => segment.id === "verdict");
+  const detailSegs = result?.speech_segments?.filter((segment) => segment.id !== "verdict") ?? [];
+  const verdictColor = verdictSeg?.text.match(/worth|works|great/i) ? C.success
+    : verdictSeg?.text.match(/clash|avoid|not worth/i) ? C.danger
+    : C.focus;
 
   return (
     <>
       <LiveRegions />
       <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+        <div style={{ flex: 1, position: "relative", minHeight: "44vh" }}>
+          <CameraView
+            onCapture={handleLiveFrame}
+            onError={(msg) => { announce(msg, "assertive"); speak(msg); }}
+            autoCapture={liveEnabled}
+            captureInterval={LIVE_CAPTURE_INTERVAL_MS}
+            showControls={false}
+          />
 
-        {/* Camera */}
-        <div style={{ flex: 1, position: "relative", minHeight: "40vh" }}>
-          {scanning ? (
-            <CameraView
-              onCapture={handleCapture}
-              onDescribe={handleDescribe}
-              captureRef={captureRefInternal}
-              describeRef={describeRef}
-              autoCapture={true}
-              captureInterval={5000}
-              onError={(msg) => { announce(msg, "assertive"); speak(msg); }}
-            />
-          ) : (
-            <div
-              role="status"
-              aria-label="Scanning paused"
-              style={{
-                flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
-                background: "#000", height: "100%", minHeight: "40vh",
-              }}
-            >
-              <p style={{ fontFamily: FONT, fontSize: 20, color: C.muted }}>Paused</p>
-            </div>
-          )}
-
-          {(detecting || quickResult) && !result && (
-            <div
-              aria-live="polite"
-              style={{
-                position: "absolute", top: 12, left: 12,
-                background: "rgba(0,0,0,0.85)", borderRadius: 12, padding: "8px 14px",
-                border: `1px solid ${
-                  quickResult?.verdict === "works" ? C.success
-                  : quickResult?.verdict === "clashes" ? C.danger
-                  : quickResult ? C.focus : "transparent"
-                }`,
-              }}
-            >
-              {quickResult ? (
-                <>
-                  <div style={{ fontFamily: FONT, fontSize: 10, color:
-                    quickResult.verdict === "works" ? C.success
-                    : quickResult.verdict === "clashes" ? C.danger : C.focus,
-                    textTransform: "uppercase", letterSpacing: "0.2em", marginBottom: 3,
-                  }}>
-                    {quickResult.verdict === "works" ? "Works with wardrobe"
-                      : quickResult.verdict === "clashes" ? "Might clash"
-                      : "Style tip"}
-                  </div>
-                  <span style={{ fontFamily: FONT, fontSize: 13, color: C.text }}>
-                    {quickResult.reason}
-                  </span>
-                </>
-              ) : (
-                <span style={{ fontFamily: FONT, fontSize: 13, color: C.success }}>
-                  Clothing detected — checking wardrobe…
-                </span>
-              )}
-            </div>
-          )}
-
-          {processing && !quickResult && (
-            <div
-              aria-hidden="true"
-              style={{
-                position: "absolute", top: 12, left: 12,
-                background: "rgba(0,0,0,0.75)", borderRadius: 12, padding: "6px 14px",
-              }}
-            >
-              <span style={{ fontFamily: FONT, fontSize: 13, color: C.focus }}>Analyzing…</span>
-            </div>
-          )}
-
-          {/* Wardrobe status badge */}
-          <div
-            aria-hidden="true"
-            style={{
-              position: "absolute", top: 12, right: 12,
-              background: "rgba(0,0,0,0.75)", borderRadius: 12, padding: "6px 14px",
-            }}
-          >
+          <div style={{
+            position: "absolute", top: 12, right: 12,
+            background: "rgba(0,0,0,0.78)", borderRadius: 12,
+            padding: "6px 14px",
+          }}>
             <span style={{ fontFamily: FONT, fontSize: 12, color: emptyWardrobe ? C.muted : C.success }}>
               {emptyWardrobe ? "No wardrobe" : `${wardrobeItems.length} items`}
             </span>
           </div>
+
+          <div
+            aria-live="polite"
+            style={{
+              position: "absolute", top: 12, left: 12,
+              background: "rgba(0,0,0,0.82)",
+              borderRadius: 12,
+              border: `1px solid ${analyzing ? C.focus : liveEnabled ? C.success : C.border}`,
+              padding: "8px 14px",
+            }}
+          >
+            <span style={{ fontFamily: FONT, fontSize: 13, color: analyzing ? C.focus : liveEnabled ? C.success : C.muted }}>
+              {analyzing ? "Llama is checking..." : liveEnabled ? "Live assist on" : "Live assist paused"}
+            </span>
+          </div>
         </div>
 
-        {/* Results + controls */}
         <div style={{
-          padding: 20, background: C.bg,
+          padding: 20,
+          background: C.bg,
           borderTop: `2px solid ${C.border}`,
-          maxHeight: "58vh", overflowY: "auto",
+          maxHeight: "56vh",
+          overflowY: "auto",
         }}>
           <div style={{
-            fontFamily: FONT, fontSize: 12, color: C.focus,
-            letterSpacing: "0.3em", textTransform: "uppercase", marginBottom: 12,
+            fontFamily: FONT,
+            fontSize: 12,
+            color: C.focus,
+            letterSpacing: "0.3em",
+            textTransform: "uppercase",
+            marginBottom: 12,
           }}>
-            SHOPPING MODE
+            LIVE SHOPPING MODE
           </div>
 
-          {/* Empty wardrobe notice */}
-          {emptyWardrobe && !result && (
-            <div style={{
-              background: C.surface, borderRadius: 12, padding: 14,
-              border: `1px solid ${C.border}`, marginBottom: 14,
+          {!result && !errorMsg && (
+            <p aria-live="polite" style={{ fontFamily: FONT, fontSize: 17, color: C.muted, lineHeight: 1.7, marginBottom: 14 }}>
+              {emptyWardrobe
+                ? "Point the camera at clothing. Llama will give standalone style advice."
+                : "Point the camera at clothing. Llama will compare it with your wardrobe."}
+            </p>
+          )}
+
+          {errorMsg && !result && (
+            <div role="status" style={{
+              background: "#2A0E0E",
+              border: `1px solid ${C.danger}`,
+              borderRadius: 12,
+              padding: 14,
+              marginBottom: 14,
             }}>
-              <p style={{ fontFamily: FONT, fontSize: 14, color: C.muted, lineHeight: 1.6, margin: 0 }}>
-                Your wardrobe is empty. I will tell you how each item looks on its own and what it would generally pair with.
+              <p style={{ fontFamily: FONT, fontSize: 15, color: C.danger, lineHeight: 1.6, margin: 0 }}>
+                {errorMsg}
               </p>
             </div>
           )}
 
-          {result ? (
+          {result && (
             <>
-              {/* Occasions + Styles */}
               {(result.suitable_occasions?.length > 0 || result.top_archetypes?.length > 0) && (
                 <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
                   {result.suitable_occasions?.length > 0 && (
-                    <div style={{
-                      background: C.surface, borderRadius: 12, padding: "10px 14px",
-                      border: `1px solid ${C.border}`, flex: 1,
-                    }}>
+                    <div style={{ background: C.surface, borderRadius: 12, padding: "10px 14px", border: `1px solid ${C.border}`, flex: 1 }}>
                       <div style={{ fontFamily: FONT, fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6 }}>
                         Works for
                       </div>
-                      {result.suitable_occasions.map((occ) => (
-                        <div key={occ} style={{ fontFamily: FONT, fontSize: 13, color: C.text, lineHeight: 1.5 }}>
-                          {occ}
+                      {result.suitable_occasions.map((occasion) => (
+                        <div key={occasion} style={{ fontFamily: FONT, fontSize: 13, color: C.text, lineHeight: 1.5 }}>
+                          {occasion}
                         </div>
                       ))}
                     </div>
                   )}
                   {result.top_archetypes?.length > 0 && (
-                    <div style={{
-                      background: C.surface, borderRadius: 12, padding: "10px 14px",
-                      border: `1px solid ${C.border}`, flex: 1,
-                    }}>
+                    <div style={{ background: C.surface, borderRadius: 12, padding: "10px 14px", border: `1px solid ${C.border}`, flex: 1 }}>
                       <div style={{ fontFamily: FONT, fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6 }}>
                         Style
                       </div>
-                      {result.top_archetypes.map((arch) => (
-                        <div key={arch} style={{ fontFamily: FONT, fontSize: 13, color: C.text, lineHeight: 1.5 }}>
-                          {arch}
+                      {result.top_archetypes.map((archetype) => (
+                        <div key={archetype} style={{ fontFamily: FONT, fontSize: 13, color: C.text, lineHeight: 1.5 }}>
+                          {archetype}
                         </div>
                       ))}
                     </div>
@@ -288,94 +234,107 @@ export default function ShoppingScreen() {
                 </div>
               )}
 
-              {/* Speech segments — verdict prominent, details expandable */}
-              {(() => {
-                const verdictSeg = result.speech_segments?.find((s) => s.id === "verdict");
-                const detailSegs = result.speech_segments?.filter((s) => s.id !== "verdict") ?? [];
-                const verdictColor = verdictSeg?.text.match(/worth|works|great/i) ? C.success
-                  : verdictSeg?.text.match(/clash|avoid|not worth/i) ? C.danger : C.focus;
-                return (
-                  <>
-                    {verdictSeg && (
-                      <div style={{
-                        background: C.surface, borderRadius: 14, padding: "12px 16px",
-                        border: `2px solid ${verdictColor}`, marginBottom: 12,
-                      }}>
-                        <div style={{ fontFamily: FONT, fontSize: 10, color: verdictColor, textTransform: "uppercase", letterSpacing: "0.2em", marginBottom: 4 }}>
-                          Verdict
-                        </div>
-                        <p style={{ fontFamily: FONT, fontSize: 16, color: C.text, lineHeight: 1.6, margin: 0 }}>
-                          {verdictSeg.text}
-                        </p>
-                      </div>
-                    )}
-                    {detailSegs.length > 0 && (
-                      <>
-                        <button
-                          onClick={() => setDetailsOpen((o) => !o)}
-                          style={{
-                            fontFamily: FONT, fontSize: 13, color: C.focus,
-                            background: "none", border: "none", cursor: "pointer",
-                            marginBottom: 8, padding: 0,
-                          }}
-                        >
-                          {detailsOpen ? "Hide details ▲" : "Show details ▼"}
-                        </button>
-                        {detailsOpen && detailSegs.map((seg) => (
-                          <div key={seg.id} style={{
-                            background: C.surface, borderRadius: 12, padding: 14,
-                            border: `1px solid ${C.border}`, marginBottom: 10,
-                          }}>
-                            <div style={{ fontFamily: FONT, fontSize: 10, color: C.focus, textTransform: "uppercase", letterSpacing: "0.2em", marginBottom: 6 }}>
-                              {seg.id === "item" ? "Item" : emptyWardrobe ? "Style Advice" : "Wardrobe Match"}
-                            </div>
-                            <p style={{ fontFamily: FONT, fontSize: 15, color: C.text, lineHeight: 1.7, margin: 0 }}>
-                              {seg.text}
-                            </p>
-                          </div>
-                        ))}
-                      </>
-                    )}
-                  </>
-                );
-              })()}
+              {verdictSeg && (
+                <div style={{
+                  background: C.surface,
+                  borderRadius: 14,
+                  padding: "12px 16px",
+                  border: `2px solid ${verdictColor}`,
+                  marginBottom: 12,
+                }}>
+                  <div style={{ fontFamily: FONT, fontSize: 10, color: verdictColor, textTransform: "uppercase", letterSpacing: "0.2em", marginBottom: 4 }}>
+                    Verdict
+                  </div>
+                  <p style={{ fontFamily: FONT, fontSize: 16, color: C.text, lineHeight: 1.6, margin: 0 }}>
+                    {verdictSeg.text}
+                  </p>
+                </div>
+              )}
 
-              {/* Follow-up chatbot — full multi-turn conversation about this item */}
+              {detailSegs.length > 0 && (
+                <>
+                  <button
+                    onClick={() => setDetailsOpen((open) => !open)}
+                    style={{
+                      fontFamily: FONT,
+                      fontSize: 13,
+                      color: C.focus,
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      marginBottom: 8,
+                      padding: 0,
+                    }}
+                  >
+                    {detailsOpen ? "Hide details ▲" : "Show details ▼"}
+                  </button>
+                  {detailsOpen && detailSegs.map((segment) => (
+                    <div key={segment.id} style={{
+                      background: C.surface,
+                      borderRadius: 12,
+                      padding: 14,
+                      border: `1px solid ${C.border}`,
+                      marginBottom: 10,
+                    }}>
+                      <div style={{ fontFamily: FONT, fontSize: 10, color: C.focus, textTransform: "uppercase", letterSpacing: "0.2em", marginBottom: 6 }}>
+                        {segment.id === "item" ? "Item" : emptyWardrobe ? "Style Advice" : "Wardrobe Match"}
+                      </div>
+                      <p style={{ fontFamily: FONT, fontSize: 15, color: C.text, lineHeight: 1.7, margin: 0 }}>
+                        {segment.text}
+                      </p>
+                    </div>
+                  ))}
+                </>
+              )}
+
               <ContextChat
-                context={result.speech_segments?.map((s) => s.text).join("\n") || ""}
+                context={result.speech_segments?.map((segment) => segment.text).join("\n") || ""}
                 feature="shopping"
                 speak={speak}
                 announce={announce}
               />
             </>
-          ) : (
-            <p aria-live="polite" style={{ fontFamily: FONT, fontSize: 17, color: C.muted, lineHeight: 1.7, marginBottom: 14 }}>
-              {emptyWardrobe
-                ? "Point at any clothing item. I will tell you how it looks and what it pairs with."
-                : "Point at clothing items. I will tell you if they match your wardrobe."}
-            </p>
           )}
 
-          {/* Controls */}
-          <div style={{ display: "flex", gap: 12 }}>
-            <div style={{ flex: 1 }}>
-              <BigButton
-                label={scanning ? "Pause" : "Resume"}
-                hint={scanning ? "Pause automatic scanning" : "Resume automatic scanning"}
-                icon={scanning ? "⏸" : "▶"}
-                variant={scanning ? "danger" : "success"}
-                onClick={toggleScanning}
-              />
-            </div>
-            <div style={{ flex: 1 }}>
-              <BigButton
-                label="Read Again"
-                hint="Hear the last analysis read aloud"
-                icon="🔊"
-                disabled={!result}
-                onClick={speakLastResult}
-              />
-            </div>
+          <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
+            <button
+              type="button"
+              onClick={toggleLive}
+              style={{
+                flex: 1,
+                minHeight: 64,
+                borderRadius: 14,
+                border: "none",
+                background: liveEnabled ? C.danger : C.success,
+                color: liveEnabled ? C.white : "#000",
+                fontFamily: FONT,
+                fontSize: 18,
+                fontWeight: 900,
+                cursor: "pointer",
+              }}
+            >
+              {liveEnabled ? "Pause Live" : "Resume Live"}
+            </button>
+            <button
+              type="button"
+              disabled={!result && !errorMsg}
+              onClick={speakLastResult}
+              style={{
+                flex: 1,
+                minHeight: 64,
+                borderRadius: 14,
+                border: `2px solid ${C.border}`,
+                background: C.surface,
+                color: result || errorMsg ? C.text : C.muted,
+                fontFamily: FONT,
+                fontSize: 18,
+                fontWeight: 900,
+                cursor: result || errorMsg ? "pointer" : "not-allowed",
+                opacity: result || errorMsg ? 1 : 0.45,
+              }}
+            >
+              Read Again
+            </button>
           </div>
         </div>
       </div>

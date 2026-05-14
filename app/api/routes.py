@@ -11,7 +11,7 @@ All analysis is LLM-driven. The pipeline is:
 import logging
 import time
 
-from fastapi import APIRouter, UploadFile, File, Form
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from pydantic import BaseModel
 
 from app.errors.handlers import ERROR_MESSAGES
@@ -78,18 +78,18 @@ async def analyze_outfit(
 @router.post("/shopping-analyze")
 async def shopping_analyze(
     image: UploadFile = File(...),
-    wardrobe: str = "",
+    wardrobe: str = Form(""),
     locale: str = Form("en"),
 ):
     """
     Shopping mode: analyse the item in frame and compare it against the user's wardrobe.
     Returns TTS-ready feedback. If wardrobe is empty, gives a standalone style assessment.
     """
-    from google import genai
-    from google.genai import types as gtypes
+    from groq import Groq
     from app.core.config import settings
     import io as _io
     import json as _json
+    import base64 as _b64
 
     start_time = time.time()
 
@@ -103,6 +103,12 @@ async def shopping_analyze(
     img = ingest_image(raw_bytes)
     check_image_quality(img)
     segmentation_model.verify_clothing_for_shopping(img)
+
+    if not settings.GROQ_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="Shopping analysis is not configured yet. Please set the Groq API key.",
+        )
 
     has_wardrobe = bool(wardrobe and wardrobe.strip() and wardrobe.strip() != "[]")
 
@@ -119,8 +125,6 @@ async def shopping_analyze(
             "The wardrobe is empty. Give a standalone style and fit assessment. "
             "Tell the user how this item would look on them and what it would generally pair well with."
         )
-
-    client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
     prompt = f"""You are RizzVision in shopping mode, speaking to a visually impaired user.
 Your response is read aloud. Every sentence must be under 15 words. No markdown. No lists.
@@ -147,19 +151,25 @@ Return ONLY valid JSON:
 
     img_bytes_io = _io.BytesIO()
     img.save(img_bytes_io, format="JPEG", quality=85)
-    img_bytes = img_bytes_io.getvalue()
+    img_b64 = _b64.b64encode(img_bytes_io.getvalue()).decode()
 
-    response = client.models.generate_content(
-        model=settings.GEMINI_MODEL,
-        contents=[
-            gtypes.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
-            prompt,
-        ],
-        config=gtypes.GenerateContentConfig(max_output_tokens=400, temperature=0.4),
+    groq_client = Groq(api_key=settings.GROQ_API_KEY)
+    response = groq_client.chat.completions.create(
+        model=settings.GROQ_MODEL,
+        messages=[{
+            "role": "user",
+            "content": [
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}},
+                {"type": "text", "text": prompt},
+            ],
+        }],
+        max_tokens=400,
+        temperature=0.4,
+        response_format={"type": "json_object"},
     )
 
     try:
-        text = response.text.strip()
+        text = response.choices[0].message.content.strip()
         if text.startswith("```"):
             text = "\n".join(l for l in text.split("\n") if not l.strip().startswith("```"))
         data = _json.loads(text)
@@ -204,13 +214,13 @@ async def quick_compatibility(
 ):
     """
     Fast wardrobe compatibility verdict. Returns only a verdict + one-sentence reason.
-    Uses a short Gemini prompt (max 80 tokens) for lower latency than /shopping-analyze.
+    Uses a short Groq vision prompt (max 80 tokens) for lower latency than /shopping-analyze.
     """
-    from google import genai
-    from google.genai import types as gtypes
+    from groq import Groq
     from app.core.config import settings
     import io as _io
     import json as _json
+    import base64 as _b64
 
     start_time = time.time()
 
@@ -224,6 +234,12 @@ async def quick_compatibility(
     img = ingest_image(raw_bytes)
     check_image_quality(img)
     segmentation_model.verify_clothing_for_shopping(img)
+
+    if not settings.GROQ_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="Shopping analysis is not configured yet. Please set the Groq API key.",
+        )
 
     has_wardrobe = bool(wardrobe and wardrobe.strip() and wardrobe.strip() != "[]")
 
@@ -240,22 +256,27 @@ One sentence reason, under 15 words, no markdown.
 Respond in the language with ISO code: {locale}.
 Return ONLY valid JSON: {{"verdict": "works|clashes|style_tip_only", "reason": "string"}}"""
 
-    client = genai.Client(api_key=settings.GEMINI_API_KEY)
     img_bytes_io = _io.BytesIO()
     img.save(img_bytes_io, format="JPEG", quality=75)
-    img_bytes = img_bytes_io.getvalue()
+    img_b64 = _b64.b64encode(img_bytes_io.getvalue()).decode()
 
-    response = client.models.generate_content(
-        model=settings.GEMINI_MODEL,
-        contents=[
-            gtypes.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
-            prompt,
-        ],
-        config=gtypes.GenerateContentConfig(max_output_tokens=80, temperature=0.3),
+    groq_client = Groq(api_key=settings.GROQ_API_KEY)
+    response = groq_client.chat.completions.create(
+        model=settings.GROQ_MODEL,
+        messages=[{
+            "role": "user",
+            "content": [
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}},
+                {"type": "text", "text": prompt},
+            ],
+        }],
+        max_tokens=80,
+        temperature=0.3,
+        response_format={"type": "json_object"},
     )
 
     try:
-        text = response.text.strip()
+        text = response.choices[0].message.content.strip()
         if text.startswith("```"):
             text = "\n".join(l for l in text.split("\n") if not l.strip().startswith("```"))
         data = _json.loads(text)

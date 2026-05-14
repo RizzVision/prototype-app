@@ -54,3 +54,4 @@ desktop.ini
 *.log
 logs/
 RizzVision-Feature-Status.pdf
+/.claude/worktrees
