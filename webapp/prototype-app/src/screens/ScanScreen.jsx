@@ -13,7 +13,7 @@ import { SCREENS, C, FONT } from "../utils/constants";
 import { RESPONSES } from "../voice/voiceResponses";
 
 export default function ScanScreen() {
-  const { navigate } = useApp();
+  const { navigate, descriptionMode, toggleDescriptionMode } = useApp();
   const { speak } = useVoice();
   const { language } = useLocale();
   const { addItem } = useWardrobe();
@@ -43,6 +43,14 @@ export default function ScanScreen() {
       nameInputRef.current.focus();
     }
   }, [phase]);
+
+  useEffect(() => {
+    if (phase !== "naming" || !scanResult?.short_description) return;
+    const firstSentence = scanResult.short_description.match(/[^.!?]+[.!?]?/)?.[0]?.trim() || scanResult.short_description;
+    const desc = descriptionMode === "short" ? firstSentence : scanResult.short_description;
+    speak(desc);
+    announce(desc, "polite");
+  }, [descriptionMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleDescribe = useCallback((description) => {
     announce(description, "polite");
@@ -244,7 +252,7 @@ export default function ScanScreen() {
 
   // ── Naming & Save ────────────────────────────────────────────────────────────
   return (
-    <Screen title="Save to Wardrobe" subtitle={scanResult?.short_description || "Name this item"}>
+    <Screen title="Save to Wardrobe" subtitle="Name this item">
       <LiveRegions />
 
       {previewUrl && (
@@ -255,16 +263,29 @@ export default function ScanScreen() {
         />
       )}
 
-      {scanResult?.short_description && (
-        <div style={{
-          background: C.surface, borderRadius: 14, padding: "14px 18px",
-          border: `1px solid ${C.border}`, marginBottom: 20,
-        }}>
-          <p style={{ fontFamily: FONT, fontSize: 15, color: C.text, lineHeight: 1.75, margin: 0 }}>
-            {scanResult.short_description}
-          </p>
-        </div>
-      )}
+      {scanResult?.short_description && (() => {
+        const firstSentence = scanResult.short_description.match(/[^.!?]+[.!?]?/)?.[0]?.trim() || scanResult.short_description;
+        const displayDesc = descriptionMode === "short" ? firstSentence : scanResult.short_description;
+        return (
+          <>
+            <div style={{
+              background: C.surface, borderRadius: 14, padding: "14px 18px",
+              border: `1px solid ${C.border}`, marginBottom: 12,
+            }}>
+              <p style={{ fontFamily: FONT, fontSize: 15, color: C.text, lineHeight: 1.75, margin: 0 }}>
+                {displayDesc}
+              </p>
+            </div>
+            <BigButton
+              label={descriptionMode === "short" ? "Full Description" : "Brief Description"}
+              hint={descriptionMode === "short" ? "Hear the complete description" : "Hear a shorter summary"}
+              icon={descriptionMode === "short" ? "📋" : "🔊"}
+              onClick={toggleDescriptionMode}
+            />
+            <div style={{ marginBottom: 8 }} />
+          </>
+        );
+      })()}
 
       <div role="region" aria-label="Name this clothing item" style={{ marginBottom: 20 }}>
         <label

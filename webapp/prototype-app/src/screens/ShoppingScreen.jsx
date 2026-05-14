@@ -128,7 +128,7 @@ export default function ShoppingScreen() {
     <>
       <LiveRegions />
       <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-        <div style={{ flex: 1, position: "relative", minHeight: "44vh" }}>
+        <div style={{ flex: 1, position: "relative", minHeight: "44vh", display: "flex", flexDirection: "column" }}>
           <CameraView
             onCapture={handleLiveFrame}
             onError={(msg) => { announce(msg, "assertive"); speak(msg); }}

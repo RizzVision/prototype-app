@@ -63,10 +63,14 @@ export default function WardrobeCard({ item, onTap, onDelete, onEdit }) {
             👕
           </div>
         )}
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 700 }}>{item.name}</div>
-          <div style={{ fontSize: 13, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
-            {subtitle.length > 80 ? subtitle.slice(0, 80) + "…" : subtitle}
+          <div style={{
+            fontSize: 13, color: C.muted, marginTop: 4, lineHeight: 1.5,
+            display: "-webkit-box", WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical", overflow: "hidden",
+          }}>
+            {subtitle}
           </div>
         </div>
         <span aria-hidden style={{ fontSize: 22, color: C.muted }}>🔊</span>
