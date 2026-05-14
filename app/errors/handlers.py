@@ -23,7 +23,7 @@ ERROR_MESSAGES = {
     "too_dark": "The photo is too dark. Please move to better lighting.",
     "too_bright": "The photo is overexposed. Please reduce glare and try again.",
     "blurry": "The photo is blurry. Hold the camera steady and try again.",
-    "no_garment_detected": "No clothing detected. Please point the camera at a single clothing item and try again.",
+    "no_garment_detected": "No clothing detected. Please ensure the clothing is clearly visible and well-lit, then try again.",
     "llm_parse_failed": "Something went wrong generating your feedback. Please try again.",
     "internal_error": "Something unexpected went wrong. Please try again in a moment.",
     "no_file_uploaded": "No image was uploaded. Please attach a photo and try again.",

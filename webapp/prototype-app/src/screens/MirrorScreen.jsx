@@ -67,9 +67,11 @@ export default function MirrorScreen() {
         speak(shortText);
       }
     } catch (err) {
-      const msg =
-        err instanceof ImageQualityError ? err.userMessage
-        : err.message || RESPONSES.error;
+      let msg = err instanceof ImageQualityError ? err.userMessage : err.message || RESPONSES.error;
+      // Mirror accepts full outfits — soften the single-item detection error
+      if (msg.toLowerCase().includes("single clothing item")) {
+        msg = "Could not detect clothing clearly. Please ensure you are well-lit and framed in the camera, then try again.";
+      }
       setErrorMsg(msg);
       announce(msg, "assertive");
       speak(msg);

@@ -329,13 +329,16 @@ class OutfitSuggestionRequest(BaseModel):
     occasion: str
     wardrobe: str
     anchor: str = ""
+    mode: str = "wardrobe"   # "wardrobe" | "general"
+    locale: str = "en"
 
 
 @router.post("/outfit-suggestion")
 async def outfit_suggestion(req: OutfitSuggestionRequest):
     """
-    Generate 1-2 outfit combinations from wardrobe items for a given occasion.
-    Uses exact wardrobe item names, fun and hype tone, under 80 words.
+    Generate outfit suggestions for a given occasion.
+    mode=wardrobe: pairs specific items from the user's wardrobe by name.
+    mode=general:  gives broad styling advice without referencing saved items.
     """
     from google import genai
     from google.genai import types
@@ -343,26 +346,36 @@ async def outfit_suggestion(req: OutfitSuggestionRequest):
 
     client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
-    anchor_line = f"\nBuild the outfit around: {req.anchor}" if req.anchor else ""
-
-    prompt = (
-        f"You are RizzVision, a bold and fun fashion assistant speaking to a visually impaired user. "
-        f"Your response will be read aloud by a screen reader.\n\n"
-        f"RULES:\n"
-        f"1. ALWAYS refer to items by their EXACT name from the wardrobe list below. Never paraphrase or genericise.\n"
-        f"2. Never use hex codes. Use the colour name as given in the item name.\n"
-        f"3. Be short and punchy. The whole response must be under 80 words.\n"
-        f"4. Be fun and confident — like a friend hyping them up. Use phrases like "
-        f"   'You would absolutely slay in...', 'This combo is a vibe:', 'Trust me on this one:', "
-        f"   'Nobody is ready for you in...', etc.\n"
-        f"5. Give exactly 1 outfit combination if the wardrobe is small (under 4 items), "
-        f"   or 2 combinations if there are 4 or more items.\n"
-        f"6. Each combination is ONE sentence naming the exact items.\n"
-        f"7. End with one short sentence on why it works for the occasion.\n"
-        f"8. If the wardrobe is empty, say 'Your wardrobe is empty. Scan some clothes first and come back.'\n\n"
-        f"Occasion: {req.occasion}{anchor_line}\n\n"
-        f"Wardrobe (use these exact names):\n{req.wardrobe}"
-    )
+    if req.mode == "general" or not req.wardrobe.strip():
+        prompt = (
+            f"You are RizzVision, a bold and fun fashion assistant speaking to a visually impaired user. "
+            f"Your response will be read aloud. Respond in the language with ISO code: {req.locale}.\n\n"
+            f"RULES:\n"
+            f"1. No markdown, no bullet points. Speak in natural sentences.\n"
+            f"2. Be warm, encouraging, and specific. Like a friend giving real advice.\n"
+            f"3. Keep the whole response under 90 words.\n"
+            f"4. Give 2-3 concrete styling tips for the occasion: include key colours, garment types, and one accessory tip.\n"
+            f"5. Do NOT reference any wardrobe — give universal advice.\n\n"
+            f"Give general outfit advice for a {req.occasion} occasion."
+        )
+    else:
+        anchor_line = f"\nBuild the outfit around: {req.anchor}" if req.anchor else ""
+        prompt = (
+            f"You are RizzVision, a bold and fun fashion assistant speaking to a visually impaired user. "
+            f"Your response will be read aloud. Respond in the language with ISO code: {req.locale}.\n\n"
+            f"RULES:\n"
+            f"1. ALWAYS refer to items by their EXACT name from the wardrobe list below. Never paraphrase or genericise.\n"
+            f"2. Never use hex codes. Use the colour name as given in the item name.\n"
+            f"3. Be short and punchy. The whole response must be under 90 words.\n"
+            f"4. Be fun and confident — like a friend hyping them up. Use phrases like "
+            f"   'You would absolutely slay in...', 'This combo is a vibe:', 'Trust me on this one:', etc.\n"
+            f"5. Give exactly 1 outfit combination if the wardrobe is small (under 4 items), "
+            f"   or 2 combinations if there are 4 or more items.\n"
+            f"6. Each combination is ONE sentence naming the exact wardrobe items.\n"
+            f"7. End with one short sentence on why it works for the occasion.\n\n"
+            f"Occasion: {req.occasion}{anchor_line}\n\n"
+            f"Wardrobe (use these exact names):\n{req.wardrobe}"
+        )
 
     response = client.models.generate_content(
         model=settings.GEMINI_MODEL,
@@ -440,11 +453,11 @@ CONVERSATION SO FAR:
 User: {req.message}
 
 RULES:
-- Your response will be read aloud. Keep every sentence under 15 words.
-- No markdown. No bullet points. Speak naturally.
+- Your response will be read aloud. Write in natural spoken sentences — no markdown, no bullet points.
+- Give 1-2 complete sentences that fully answer the question. Do not cut off mid-thought.
 - Be specific — reference actual items, colours, and details from the context above.
 - If the user asks about something not in the context, say so honestly.
-- Keep your total response under 60 words.
+- Keep your total response under 80 words.
 
 Respond as the Assistant:"""
 
@@ -453,7 +466,7 @@ Respond as the Assistant:"""
         response = client.models.generate_content(
             model=settings.GEMINI_MODEL,
             contents=prompt,
-            config=types.GenerateContentConfig(max_output_tokens=200, temperature=0.5),
+            config=types.GenerateContentConfig(max_output_tokens=300, temperature=0.5),
         )
         answer = response.text.strip()
         # Strip any "Assistant:" prefix the model might echo
@@ -745,23 +758,23 @@ async def quick_scan(
 
     client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
-    prompt = f"""You are RizzVision helping a visually impaired user save a clothing item.
-Look at the photo and identify the SINGLE most prominent clothing item visible.
+    prompt = f"""You are RizzVision helping a visually impaired user save a clothing item to their wardrobe.
+Examine the photo carefully and identify the SINGLE most prominent clothing item visible.
 Respond in the language with ISO code: {locale}.
 
-Return ONLY valid JSON, no markdown:
+Return ONLY valid JSON (no markdown, no code fences):
 {{
-  "suggested_name": "short recognisable name e.g. Navy Blue Polo, White Kurta, Black Sneakers",
+  "suggested_name": "2-4 word specific name e.g. Navy Linen Blazer, Floral Midi Dress, White Graphic Tee, Olive Cargo Pants",
   "category": "one of: tops | bottoms | dresses | footwear | jewellery",
-  "short_description": "1-2 spoken sentences describing the item. Include colour, type, and one standout detail. Under 30 words total.",
-  "color": "dominant colour name e.g. Navy Blue, Olive Green, Off-White"
+  "short_description": "1-2 complete spoken sentences. Must include: exact colour name, garment type, fabric/texture if visible, pattern (solid/striped/floral/etc), and one notable feature (buttons, collar style, fit, etc). Natural spoken language, no markdown, 25-40 words.",
+  "color": "exact dominant colour name e.g. Dusty Rose, Charcoal Grey, Cobalt Blue, Cream White"
 }}
 
-Rules:
-- suggested_name: 2-4 words, specific and memorable. Include colour and garment type.
-- category: choose the best fit from the 5 options only.
-- short_description: natural spoken language. No markdown. Under 30 words.
-- If you cannot identify clothing, set suggested_name to "Clothing Item" and describe what you see."""
+CRITICAL RULES:
+- suggested_name: NEVER use generic names like 'Clothing Item', 'Top', 'Shirt'. Always include the specific colour AND garment type. Examples: 'Red Striped Oxford', 'Black Skinny Jeans', 'Beige Trench Coat'.
+- short_description: Be SPECIFIC. A visually impaired person relies entirely on this description. Do NOT say 'I can see a clothing item' or 'I see green'. Say EXACTLY what it is: 'A navy blue cotton polo shirt with a small embroidered logo on the chest and a classic collar.'
+- color: Use descriptive colour names, not just 'blue' — use 'Royal Blue', 'Pale Yellow', 'Dark Olive', etc.
+- category: choose the single best fit from the 5 options only."""
 
     img_bytes_io = _io.BytesIO()
     img.save(img_bytes_io, format="JPEG", quality=80)
@@ -774,7 +787,7 @@ Rules:
                 gtypes.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
                 prompt,
             ],
-            config=gtypes.GenerateContentConfig(max_output_tokens=150, temperature=0.3),
+            config=gtypes.GenerateContentConfig(max_output_tokens=300, temperature=0.3),
         )
         text = response.text.strip()
         if text.startswith("```"):
@@ -783,9 +796,9 @@ Rules:
     except Exception as e:
         logger.warning(f"quick-scan LLM failed: {e}")
         data = {
-            "suggested_name": "Clothing Item",
+            "suggested_name": "Scanned Item",
             "category": "tops",
-            "short_description": "I can see a clothing item in the photo.",
+            "short_description": "Could not identify the item clearly. Please retake the photo in good lighting.",
             "color": "",
         }
 

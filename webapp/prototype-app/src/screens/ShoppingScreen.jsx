@@ -1,13 +1,12 @@
 /**
  * ShoppingScreen — real-time wardrobe-aware shopping assistant.
  *
- * Keeps the camera feed mounted and samples frames for Groq/Llama analysis.
- * There is no manual capture path in this mode.
+ * Auto-pauses after each verdict so the user can review it undisturbed.
+ * Pressing "Continue Scanning" resumes the live capture loop.
  */
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import CameraView from "../components/CameraView";
-import ContextChat from "../components/ContextChat";
 import { useAnnounce } from "../components/LiveRegions";
 import { useLocale } from "../contexts/LocaleContext";
 import { useVoice } from "../contexts/VoiceContext";
@@ -36,23 +35,22 @@ export default function ShoppingScreen() {
 
   useEffect(() => {
     const msg = emptyWardrobe
-      ? "Live shopping mode active. I will use Llama to describe clothing and give style advice."
-      : "Live shopping mode active. I will use Llama to compare clothing with your wardrobe.";
+      ? "Live shopping mode active. Point the camera at clothing for style advice."
+      : "Live shopping mode active. I will compare clothing with your wardrobe.";
     speak(msg);
     announce(msg, "polite");
   }, [emptyWardrobe, speak, announce]);
 
   const buildSpeechSummary = useCallback((analysis) => {
-    const item = analysis.speech_segments?.find((segment) => segment.id === "item")?.text;
-    const match = analysis.speech_segments?.find((segment) => segment.id === "match")?.text;
-    const verdict = analysis.speech_segments?.find((segment) => segment.id === "verdict")?.text;
+    const item = analysis.speech_segments?.find((s) => s.id === "item")?.text;
+    const match = analysis.speech_segments?.find((s) => s.id === "match")?.text;
+    const verdict = analysis.speech_segments?.find((s) => s.id === "verdict")?.text;
     return [item, match, verdict].filter(Boolean).join("  ");
   }, []);
 
   const speakAnalysisIfNew = useCallback((analysis) => {
     const summary = buildSpeechSummary(analysis);
     if (!summary) return;
-
     const key = summary.toLowerCase().replace(/\s+/g, " ").trim();
     announce(summary, "polite");
     if (key !== lastSpokenKeyRef.current) {
@@ -73,12 +71,14 @@ export default function ShoppingScreen() {
       setResult(analysis);
       setDetailsOpen(false);
       speakAnalysisIfNew(analysis);
+      // Auto-pause after each verdict so user can review it
+      setLiveEnabled(false);
     } catch (err) {
       if (err instanceof ImageQualityError) {
         setErrorMsg(err.userMessage);
         announce(err.userMessage, "polite");
       } else {
-        const msg = "Live shopping analysis is having trouble. I will keep trying.";
+        const msg = "Having trouble reading the item. I will keep trying.";
         setErrorMsg(msg);
         announce(msg, "polite");
       }
@@ -88,15 +88,15 @@ export default function ShoppingScreen() {
     }
   }, [announce, language, liveEnabled, speakAnalysisIfNew, wardrobeItems]);
 
-  const toggleLive = useCallback(() => {
-    setLiveEnabled((enabled) => {
-      const next = !enabled;
-      const msg = next ? "Live shopping assistance resumed." : "Live shopping assistance paused.";
-      speak(msg);
-      announce(msg, "polite");
-      return next;
-    });
-  }, [announce, speak]);
+  const continueScan = useCallback(() => {
+    setLiveEnabled(true);
+    setResult(null);
+    setErrorMsg("");
+    lastSpokenKeyRef.current = "";
+    const msg = "Scanning resumed. Point the camera at the next item.";
+    speak(msg);
+    announce(msg, "polite");
+  }, [speak, announce]);
 
   const speakLastResult = useCallback(() => {
     if (result) {
@@ -110,16 +110,21 @@ export default function ShoppingScreen() {
   useEffect(() => {
     const handler = (e) => {
       const cmd = e.detail;
-      if (cmd.type === "PAUSE_SCAN" && liveEnabled) toggleLive();
-      else if (cmd.type === "RESUME_SCAN" && !liveEnabled) toggleLive();
-      else if (cmd.type === "READ_RESULT") speakLastResult();
+      if (cmd.type === "PAUSE_SCAN" && liveEnabled) {
+        setLiveEnabled(false);
+        speak("Live scanning paused.");
+      } else if (cmd.type === "RESUME_SCAN" && !liveEnabled) {
+        continueScan();
+      } else if (cmd.type === "READ_RESULT") {
+        speakLastResult();
+      }
     };
     window.addEventListener("voiceCommand", handler);
     return () => window.removeEventListener("voiceCommand", handler);
-  }, [liveEnabled, speakLastResult, toggleLive]);
+  }, [liveEnabled, speakLastResult, continueScan, speak]);
 
-  const verdictSeg = result?.speech_segments?.find((segment) => segment.id === "verdict");
-  const detailSegs = result?.speech_segments?.filter((segment) => segment.id !== "verdict") ?? [];
+  const verdictSeg = result?.speech_segments?.find((s) => s.id === "verdict");
+  const detailSegs = result?.speech_segments?.filter((s) => s.id !== "verdict") ?? [];
   const verdictColor = verdictSeg?.text.match(/worth|works|great/i) ? C.success
     : verdictSeg?.text.match(/clash|avoid|not worth/i) ? C.danger
     : C.focus;
@@ -158,7 +163,7 @@ export default function ShoppingScreen() {
             }}
           >
             <span style={{ fontFamily: FONT, fontSize: 13, color: analyzing ? C.focus : liveEnabled ? C.success : C.muted }}>
-              {analyzing ? "Llama is checking..." : liveEnabled ? "Live assist on" : "Live assist paused"}
+              {analyzing ? "Checking..." : liveEnabled ? "Live on" : "Paused"}
             </span>
           </div>
         </div>
@@ -184,8 +189,8 @@ export default function ShoppingScreen() {
           {!result && !errorMsg && (
             <p aria-live="polite" style={{ fontFamily: FONT, fontSize: 17, color: C.muted, lineHeight: 1.7, marginBottom: 14 }}>
               {emptyWardrobe
-                ? "Point the camera at clothing. Llama will give standalone style advice."
-                : "Point the camera at clothing. Llama will compare it with your wardrobe."}
+                ? "Point the camera at clothing for style advice."
+                : "Point the camera at clothing to compare with your wardrobe."}
             </p>
           )}
 
@@ -286,35 +291,57 @@ export default function ShoppingScreen() {
                   ))}
                 </>
               )}
-
-              <ContextChat
-                context={result.speech_segments?.map((segment) => segment.text).join("\n") || ""}
-                feature="shopping"
-                speak={speak}
-                announce={announce}
-              />
             </>
           )}
 
+          {/* Action buttons */}
           <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
-            <button
-              type="button"
-              onClick={toggleLive}
-              style={{
-                flex: 1,
-                minHeight: 64,
-                borderRadius: 14,
-                border: "none",
-                background: liveEnabled ? C.danger : C.success,
-                color: liveEnabled ? C.white : "#000",
-                fontFamily: FONT,
-                fontSize: 18,
-                fontWeight: 900,
-                cursor: "pointer",
-              }}
-            >
-              {liveEnabled ? "Pause Live" : "Resume Live"}
-            </button>
+            {!liveEnabled && result ? (
+              <button
+                type="button"
+                onClick={continueScan}
+                aria-label="Continue scanning — scan the next item"
+                style={{
+                  flex: 1,
+                  minHeight: 64,
+                  borderRadius: 14,
+                  border: "none",
+                  background: C.success,
+                  color: "#000",
+                  fontFamily: FONT,
+                  fontSize: 18,
+                  fontWeight: 900,
+                  cursor: "pointer",
+                }}
+              >
+                Continue Scanning
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setLiveEnabled(false);
+                  speak("Scanning paused.");
+                  announce("Scanning paused.", "polite");
+                }}
+                disabled={!liveEnabled || analyzing}
+                style={{
+                  flex: 1,
+                  minHeight: 64,
+                  borderRadius: 14,
+                  border: "none",
+                  background: C.danger,
+                  color: C.white,
+                  fontFamily: FONT,
+                  fontSize: 18,
+                  fontWeight: 900,
+                  cursor: liveEnabled && !analyzing ? "pointer" : "not-allowed",
+                  opacity: liveEnabled && !analyzing ? 1 : 0.6,
+                }}
+              >
+                Pause
+              </button>
+            )}
             <button
               type="button"
               disabled={!result && !errorMsg}

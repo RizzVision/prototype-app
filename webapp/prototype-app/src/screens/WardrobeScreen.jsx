@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Screen from "../components/Screen";
 import BigButton from "../components/BigButton";
 import WardrobeCard from "../components/WardrobeCard";
@@ -20,14 +20,18 @@ export default function WardrobeScreen() {
 
   const filtered = filter ? items.filter(i => i.category === filter) : items;
 
+  // Speak item count once when data first loads (guard prevents re-speaking on re-renders)
+  const hasSpokenCount = useRef(false);
   useEffect(() => {
     if (loading) return;
-    if (items.length === 0) {
-      speak(RESPONSES.wardrobeEmpty);
-    } else {
-      speak(RESPONSES.wardrobeCount(items.length));
-    }
-  }, [loading, items.length, speak]);
+    if (hasSpokenCount.current) return;
+    hasSpokenCount.current = true;
+    const timer = setTimeout(() => {
+      if (items.length === 0) speak(RESPONSES.wardrobeEmpty);
+      else speak(RESPONSES.wardrobeCount(items.length));
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const readAll = useCallback(() => {
     if (filtered.length === 0) {

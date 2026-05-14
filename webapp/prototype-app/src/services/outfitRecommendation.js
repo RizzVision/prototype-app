@@ -11,8 +11,8 @@ function formatWardrobe(items) {
   }).join("\n");
 }
 
-export async function getOutfitSuggestion({ items, occasion, anchorItem, locale = "en" }) {
-  const wardrobeDesc = formatWardrobe(items);
+export async function getOutfitSuggestion({ items, occasion, anchorItem, mode = "wardrobe", locale = "en" }) {
+  const wardrobeDesc = mode === "general" ? "" : formatWardrobe(items);
   const anchorLine = anchorItem
     ? `The user wants to build an outfit around: ${anchorItem.name}.`
     : "";
@@ -22,7 +22,7 @@ export async function getOutfitSuggestion({ items, occasion, anchorItem, locale 
     res = await fetch(`${BASE_URL}/outfit-suggestion`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ occasion, wardrobe: wardrobeDesc, anchor: anchorLine, locale }),
+      body: JSON.stringify({ occasion, wardrobe: wardrobeDesc, anchor: anchorLine, mode, locale }),
       signal: AbortSignal.timeout(30000),
     });
   } catch (err) {
