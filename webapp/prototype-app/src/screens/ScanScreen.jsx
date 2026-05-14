@@ -46,8 +46,8 @@ export default function ScanScreen() {
 
   useEffect(() => {
     if (phase !== "naming" || !scanResult?.short_description) return;
-    const firstSentence = scanResult.short_description.match(/[^.!?]+[.!?]?/)?.[0]?.trim() || scanResult.short_description;
-    const desc = descriptionMode === "short" ? firstSentence : scanResult.short_description;
+    const longDesc = [scanResult.short_description, scanResult.color, scanResult.category].filter(Boolean).join(". ");
+    const desc = descriptionMode === "short" ? scanResult.short_description : longDesc;
     speak(desc);
     announce(desc, "polite");
   }, [descriptionMode]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -264,8 +264,8 @@ export default function ScanScreen() {
       )}
 
       {scanResult?.short_description && (() => {
-        const firstSentence = scanResult.short_description.match(/[^.!?]+[.!?]?/)?.[0]?.trim() || scanResult.short_description;
-        const displayDesc = descriptionMode === "short" ? firstSentence : scanResult.short_description;
+        const longDesc = [scanResult.short_description, scanResult.color, scanResult.category].filter(Boolean).join(". ");
+        const displayDesc = descriptionMode === "short" ? scanResult.short_description : longDesc;
         return (
           <>
             <div style={{
