@@ -62,10 +62,13 @@ export async function analyzeOutfit(base64, occasion = "", locale = "en", mode =
     res = await fetch(`${BASE_URL}/analyze`, {
       method: "POST",
       body: formData,
+      signal: AbortSignal.timeout(45000),
     });
   } catch (networkErr) {
     throw new Error(
-      "Could not reach the analysis server. Please check your connection and try again."
+      networkErr.name === "TimeoutError"
+        ? "Analysis timed out. Please try again."
+        : "Could not reach the analysis server. Please check your connection and try again."
     );
   }
 
@@ -127,9 +130,14 @@ export async function analyzeForShopping(base64, wardrobeItems = [], locale = "e
     res = await fetch(`${BASE_URL}/shopping-analyze`, {
       method: "POST",
       body: formData,
+      signal: AbortSignal.timeout(30000),
     });
-  } catch {
-    throw new Error("Could not reach the analysis server. Please check your connection and try again.");
+  } catch (err) {
+    throw new Error(
+      err.name === "TimeoutError"
+        ? "Shopping analysis timed out. Please try again."
+        : "Could not reach the analysis server. Please check your connection and try again."
+    );
   }
 
   if (res.ok) return await res.json();
@@ -259,15 +267,18 @@ export async function identifyWardrobeItem(base64, wardrobeItems = [], locale = 
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ image_base64: base64, wardrobe, locale }),
+      signal: AbortSignal.timeout(20000),
     });
     if (!res.ok) throw new Error(`identify-item failed (${res.status})`);
     return await res.json();
-  } catch {
+  } catch (err) {
     return {
       matched_id: null,
       matched_name: null,
       confidence: "none",
-      spoken: "Could not reach the server. Please check your connection.",
+      spoken: err.name === "TimeoutError"
+        ? "Identification timed out. Please try again."
+        : "Could not reach the server. Please check your connection.",
     };
   }
 }
@@ -287,9 +298,17 @@ export async function quickScan(base64, locale = "en") {
 
   let res;
   try {
-    res = await fetch(`${BASE_URL}/quick-scan`, { method: "POST", body: formData });
-  } catch {
-    throw new Error("Could not reach the analysis server.");
+    res = await fetch(`${BASE_URL}/quick-scan`, {
+      method: "POST",
+      body: formData,
+      signal: AbortSignal.timeout(20000),
+    });
+  } catch (err) {
+    throw new Error(
+      err.name === "TimeoutError"
+        ? "Scan timed out. Please try again."
+        : "Could not reach the analysis server."
+    );
   }
 
   if (res.ok) return await res.json();
@@ -315,9 +334,17 @@ export async function describeFrame(base64, locale = "en") {
 
   let res;
   try {
-    res = await fetch(`${BASE_URL}/describe-frame`, { method: "POST", body: formData });
-  } catch {
-    throw new Error("Could not reach the analysis server.");
+    res = await fetch(`${BASE_URL}/describe-frame`, {
+      method: "POST",
+      body: formData,
+      signal: AbortSignal.timeout(20000),
+    });
+  } catch (err) {
+    throw new Error(
+      err.name === "TimeoutError"
+        ? "Description timed out. Please try again."
+        : "Could not reach the analysis server."
+    );
   }
 
   if (res.ok) return await res.json();

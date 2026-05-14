@@ -21,12 +21,13 @@ export default function WardrobeScreen() {
   const filtered = filter ? items.filter(i => i.category === filter) : items;
 
   useEffect(() => {
+    if (loading) return;
     if (items.length === 0) {
       speak(RESPONSES.wardrobeEmpty);
     } else {
       speak(RESPONSES.wardrobeCount(items.length));
     }
-  }, [items, speak]);
+  }, [loading, items.length, speak]);
 
   const readAll = useCallback(() => {
     if (filtered.length === 0) {
