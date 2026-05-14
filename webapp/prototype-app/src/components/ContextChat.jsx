@@ -79,6 +79,9 @@ export default function ContextChat({ context, feature, speak, announce }) {
       speak("Voice input is not supported in this browser.");
       return;
     }
+    // Pause the global voice listener so both don't compete for the microphone
+    window.dispatchEvent(new CustomEvent("pauseGlobalVoice"));
+
     const rec = new SR();
     rec.lang = locale.speechLocale;
     rec.interimResults = false;
@@ -88,11 +91,17 @@ export default function ContextChat({ context, feature, speak, announce }) {
       const transcript = e.results[0][0].transcript.trim();
       setInput(transcript);
       setListening(false);
-      // Auto-submit voice input
+      window.dispatchEvent(new CustomEvent("resumeGlobalVoice"));
       submit(transcript);
     };
-    rec.onerror = () => setListening(false);
-    rec.onend = () => setListening(false);
+    rec.onerror = () => {
+      setListening(false);
+      window.dispatchEvent(new CustomEvent("resumeGlobalVoice"));
+    };
+    rec.onend = () => {
+      setListening(false);
+      window.dispatchEvent(new CustomEvent("resumeGlobalVoice"));
+    };
 
     recognitionRef.current = rec;
     rec.start();
@@ -103,6 +112,7 @@ export default function ContextChat({ context, feature, speak, announce }) {
   const stopVoice = useCallback(() => {
     recognitionRef.current?.stop();
     setListening(false);
+    window.dispatchEvent(new CustomEvent("resumeGlobalVoice"));
   }, []);
 
   // ── Render ───────────────────────────────────────────────────────────────────

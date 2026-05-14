@@ -1,7 +1,19 @@
+import { useState, useEffect } from "react";
 import { C, FONT } from "../utils/constants";
+import { getImageUrl } from "../utils/storage";
 
 export default function WardrobeCard({ item, onTap, onDelete, onEdit }) {
-  // Show the rich description if available, otherwise fall back to structured fields
+  const [thumbUrl, setThumbUrl] = useState(null);
+
+  useEffect(() => {
+    if (!item.imageUrl) return;
+    let cancelled = false;
+    getImageUrl(item.imageUrl)
+      .then((url) => { if (!cancelled) setThumbUrl(url); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [item.imageUrl]);
+
   const subtitle = item.description
     || `${item.colorDescription || item.color || ""} ${item.pattern || ""} ${item.type || item.category || ""}`.trim();
 
@@ -32,6 +44,25 @@ export default function WardrobeCard({ item, onTap, onDelete, onEdit }) {
           WebkitTapHighlightColor: "rgba(255,214,0,0.2)",
         }}
       >
+        {thumbUrl ? (
+          <img
+            src={thumbUrl}
+            alt=""
+            aria-hidden
+            style={{
+              width: 52, height: 52, borderRadius: 10,
+              objectFit: "cover", flexShrink: 0,
+            }}
+          />
+        ) : (
+          <div aria-hidden style={{
+            width: 52, height: 52, borderRadius: 10, flexShrink: 0,
+            background: C.border, display: "flex", alignItems: "center",
+            justifyContent: "center", fontSize: 22,
+          }}>
+            👕
+          </div>
+        )}
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 700 }}>{item.name}</div>
           <div style={{ fontSize: 13, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>

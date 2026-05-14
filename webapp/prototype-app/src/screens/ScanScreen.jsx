@@ -33,8 +33,8 @@ export default function ScanScreen() {
 
   useEffect(() => {
     if (phase === "camera") {
-      speak("Point the camera at a single clothing item and tap Capture. Or tap Describe to hear what's in frame.");
-      announce("Camera ready. Point at clothing and tap Capture.", "polite");
+      speak(RESPONSES.scanReady);
+      announce(RESPONSES.scanReady, "polite");
     }
   }, [phase]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -61,9 +61,7 @@ export default function ScanScreen() {
       setScanResult(result);
       setCustomName(result.suggested_name || "");
 
-      const desc = result.short_description
-        ? `I can see: ${result.short_description} I'll save it as "${result.suggested_name}". You can change the name below.`
-        : `I found a ${result.suggested_name}. You can rename it before saving.`;
+      const desc = result.short_description || result.suggested_name;
       speak(desc);
       announce(desc, "polite");
       setPhase("naming");

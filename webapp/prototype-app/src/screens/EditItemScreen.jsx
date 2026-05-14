@@ -27,13 +27,14 @@ export default function EditItemScreen() {
     if (item) speak(`Editing ${item.name}. Tap a field to change it, then tap Save. Say confirm to save.`);
   }, []);
 
-  // Keep a ref to the latest handleSave to avoid stale closure in the voice listener
-  const handleSaveRef = useRef(handleSave);
+  // Keep a ref to the latest handleSave to avoid stale closure in the voice listener.
+  // Initialised to null (not handleSave) because handleSave is declared below as a const.
+  const handleSaveRef = useRef(null);
   useEffect(() => { handleSaveRef.current = handleSave; });
 
   useEffect(() => {
     const handler = (e) => {
-      if (e.detail?.type === "CONFIRM" && !saving) handleSaveRef.current();
+      if (e.detail?.type === "CONFIRM" && !saving) handleSaveRef.current?.();
     };
     window.addEventListener("voiceCommand", handler);
     return () => window.removeEventListener("voiceCommand", handler);

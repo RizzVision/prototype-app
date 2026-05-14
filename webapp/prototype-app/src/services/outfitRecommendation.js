@@ -3,7 +3,6 @@ const BASE_URL = (import.meta.env.VITE_RIZZVISION_API_URL || "http://localhost:8
 function formatWardrobe(items) {
   if (items.length === 0) return "The wardrobe is empty.";
   return items.map((item, i) => {
-    // Use colorDescription (human name like "navy blue") over hex code
     const colorLabel = item.colorDescription || item.color_description || item.color || "";
     const parts = [item.name];
     if (colorLabel && !colorLabel.startsWith("#")) parts.push(`(${colorLabel})`);
@@ -18,11 +17,21 @@ export async function getOutfitSuggestion({ items, occasion, anchorItem, locale 
     ? `The user wants to build an outfit around: ${anchorItem.name}.`
     : "";
 
-  const res = await fetch(`${BASE_URL}/outfit-suggestion`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ occasion, wardrobe: wardrobeDesc, anchor: anchorLine, locale }),
-  });
+  let res;
+  try {
+    res = await fetch(`${BASE_URL}/outfit-suggestion`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ occasion, wardrobe: wardrobeDesc, anchor: anchorLine, locale }),
+      signal: AbortSignal.timeout(30000),
+    });
+  } catch (err) {
+    throw new Error(
+      err.name === "TimeoutError"
+        ? "Outfit suggestion timed out. Please try again."
+        : "Could not reach the server. Please check your connection."
+    );
+  }
 
   if (!res.ok) throw new Error("Could not get outfit suggestion. Please try again.");
   const data = await res.json();

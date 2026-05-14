@@ -45,9 +45,13 @@ export function VoiceProvider({ children, announce, onScreenCommand }) {
         stop();
         break;
       case "DELETE_LAST_ITEM": {
-        const last = removeLast();
-        if (last) speak(RESPONSES.itemDeleted(last.name));
-        else speak(RESPONSES.noItemToDelete);
+        if (items.length === 0) {
+          speak(RESPONSES.noItemToDelete);
+        } else {
+          removeLast().then((last) => {
+            if (last) speak(RESPONSES.itemDeleted(last.name));
+          });
+        }
         break;
       }
       case "SET_LANGUAGE": {
@@ -155,6 +159,13 @@ export function VoiceProvider({ children, announce, onScreenCommand }) {
 
   const { isListening, transcript, supported, startListening, stopListening, toggleListening } =
     useVoiceInput({ onResult: handleVoiceResult, lang: locale.speechLocale });
+
+  // Pause/resume global voice when ContextChat uses the microphone
+  useEffect(() => {
+    const pause = () => { if (isListening) stopListening(); };
+    window.addEventListener("pauseGlobalVoice", pause);
+    return () => window.removeEventListener("pauseGlobalVoice", pause);
+  }, [isListening, stopListening]);
 
   return (
     <VoiceContext.Provider value={{
