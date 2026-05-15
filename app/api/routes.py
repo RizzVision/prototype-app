@@ -464,10 +464,11 @@ User: {req.message}
 
 RULES:
 - Your response will be read aloud. Write in natural spoken sentences — no markdown, no bullet points.
-- Give 1-2 complete sentences that fully answer the question. Do not cut off mid-thought.
+- Give 2-3 complete sentences that fully answer the question. Do not cut off mid-thought.
 - Be specific — reference actual items, colours, and details from the context above.
-- If the user asks about something not in the context, say so honestly.
+- If the user asks about something not in the context, give your best general advice — do NOT ask clarifying questions back.
 - Keep your total response under 80 words.
+- CRITICAL: Start your response directly with the answer. Never open with "Oh", "Hey", "Sure", "Great question", acknowledgements, or questions back to the user. The very first word must be part of your actual answer.
 
 Respond as the Assistant:"""
 
@@ -476,7 +477,7 @@ Respond as the Assistant:"""
         response = client.models.generate_content(
             model=settings.GEMINI_MODEL,
             contents=prompt,
-            config=types.GenerateContentConfig(max_output_tokens=300, temperature=0.5),
+            config=types.GenerateContentConfig(max_output_tokens=400, temperature=0.5),
         )
         answer = response.text.strip()
         # Strip any "Assistant:" prefix the model might echo
