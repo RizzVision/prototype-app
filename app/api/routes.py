@@ -163,7 +163,7 @@ Return ONLY valid JSON:
                 {"type": "text", "text": prompt},
             ],
         }],
-        max_tokens=500,
+        max_tokens=1000,
         temperature=0.4,
         response_format={"type": "json_object"},
     )
@@ -276,7 +276,7 @@ Return ONLY valid JSON: {{"verdict": "works|clashes|style_tip_only", "reason": "
                 {"type": "text", "text": prompt},
             ],
         }],
-        max_tokens=150,
+        max_tokens=1000,
         temperature=0.3,
         response_format={"type": "json_object"},
     )
@@ -325,7 +325,7 @@ async def shopping_followup(req: ShoppingFollowUpRequest):
     response = client.models.generate_content(
         model=settings.GEMINI_MODEL,
         contents=prompt,
-        config=gtypes.GenerateContentConfig(max_output_tokens=250, temperature=0.4),
+        config=gtypes.GenerateContentConfig(max_output_tokens=1000, temperature=0.4),
     )
 
     return {"answer": response.text.strip()}
@@ -390,7 +390,7 @@ async def outfit_suggestion(req: OutfitSuggestionRequest):
     response = client.models.generate_content(
         model=settings.GEMINI_MODEL,
         contents=prompt,
-        config=types.GenerateContentConfig(max_output_tokens=250, temperature=0.7),
+        config=types.GenerateContentConfig(max_output_tokens=1000, temperature=0.7),
     )
     return {"suggestion": response.text}
 
@@ -477,7 +477,7 @@ Respond as the Assistant:"""
         response = client.models.generate_content(
             model=settings.GEMINI_MODEL,
             contents=prompt,
-            config=types.GenerateContentConfig(max_output_tokens=250, temperature=0.5),
+            config=types.GenerateContentConfig(max_output_tokens=1000, temperature=0.5),
         )
         answer = response.text.strip()
         # Strip any "Assistant:" prefix the model might echo
@@ -581,7 +581,7 @@ Return ONLY valid JSON:
                 gtypes.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
                 prompt,
             ],
-            config=gtypes.GenerateContentConfig(max_output_tokens=300, temperature=0.3),
+            config=gtypes.GenerateContentConfig(max_output_tokens=1000, temperature=0.3),
         )
         text = response.text.strip()
         if text.startswith("```"):
@@ -724,7 +724,7 @@ Only include a command when the user clearly wants an action, not just informati
         response = client.models.generate_content(
             model=settings.GEMINI_MODEL,
             contents=prompt,
-            config=types.GenerateContentConfig(max_output_tokens=250, temperature=0.5),
+            config=types.GenerateContentConfig(max_output_tokens=1000, temperature=0.5),
         )
         text = response.text.strip()
         if text.startswith("```"):
@@ -798,7 +798,7 @@ CRITICAL RULES:
                 gtypes.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
                 prompt,
             ],
-            config=gtypes.GenerateContentConfig(max_output_tokens=500, temperature=0.3),
+            config=gtypes.GenerateContentConfig(max_output_tokens=1000, temperature=0.3),
         )
         text = response.text.strip()
         if text.startswith("```"):
@@ -878,7 +878,7 @@ async def describe_frame(
             gtypes.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
             prompt,
         ],
-        config=gtypes.GenerateContentConfig(max_output_tokens=150, temperature=0.3),
+        config=gtypes.GenerateContentConfig(max_output_tokens=1000, temperature=0.3),
     )
 
     description = (
