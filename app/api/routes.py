@@ -804,7 +804,17 @@ CRITICAL RULES:
                 response_mime_type="application/json",
             ),
         )
-        data = _json.loads(response.text)
+        raw = response.text or ""
+        logger.debug(f"quick-scan raw response: {raw!r}")
+        # Strip markdown fences if present despite mime type hint
+        if "```" in raw:
+            raw = "\n".join(l for l in raw.split("\n") if not l.strip().startswith("```"))
+        # Extract first JSON object if model prefixed with prose
+        import re as _re
+        match = _re.search(r'\{.*\}', raw, _re.DOTALL)
+        if match:
+            raw = match.group(0)
+        data = _json.loads(raw)
     except Exception as e:
         logger.warning(f"quick-scan LLM failed: {e}")
         data = {
