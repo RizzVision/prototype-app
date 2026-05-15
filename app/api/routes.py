@@ -798,12 +798,13 @@ CRITICAL RULES:
                 gtypes.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
                 prompt,
             ],
-            config=gtypes.GenerateContentConfig(max_output_tokens=1000, temperature=0.3),
+            config=gtypes.GenerateContentConfig(
+                max_output_tokens=1000,
+                temperature=0.3,
+                response_mime_type="application/json",
+            ),
         )
-        text = response.text.strip()
-        if text.startswith("```"):
-            text = "\n".join(l for l in text.split("\n") if not l.strip().startswith("```"))
-        data = _json.loads(text)
+        data = _json.loads(response.text)
     except Exception as e:
         logger.warning(f"quick-scan LLM failed: {e}")
         data = {

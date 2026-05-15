@@ -46,8 +46,7 @@ export default function ScanScreen() {
 
   useEffect(() => {
     if (phase !== "naming" || !scanResult?.short_description) return;
-    const longDesc = [scanResult.short_description, scanResult.color].filter(Boolean).map(s => s.replace(/[.\s]+$/, "")).join(". ") + ".";
-    const desc = descriptionMode === "short" ? scanResult.short_description : longDesc;
+    const desc = scanResult.short_description;
     speak(desc);
     announce(desc, "polite");
   }, [descriptionMode]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -264,8 +263,7 @@ export default function ScanScreen() {
       )}
 
       {scanResult?.short_description && (() => {
-        const longDesc = [scanResult.short_description, scanResult.color].filter(Boolean).map(s => s.replace(/[.\s]+$/, "")).join(". ") + ".";
-        const displayDesc = descriptionMode === "short" ? scanResult.short_description : longDesc;
+        const displayDesc = scanResult.short_description;
         return (
           <>
             <div style={{
