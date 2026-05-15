@@ -800,6 +800,16 @@ CRITICAL RULES:
                 max_output_tokens=1000,
                 temperature=0.3,
                 response_mime_type="application/json",
+                response_schema={
+                    "type": "object",
+                    "properties": {
+                        "suggested_name":    {"type": "string"},
+                        "category":          {"type": "string", "enum": ["tops", "bottoms", "dresses", "footwear", "jewellery"]},
+                        "short_description": {"type": "string"},
+                        "color":             {"type": "string"},
+                    },
+                    "required": ["suggested_name", "category", "short_description", "color"],
+                },
             ),
         )
         data = _json.loads(response.text)
