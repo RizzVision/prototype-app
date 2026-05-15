@@ -186,7 +186,7 @@ def get_outfit_feedback(img: Image.Image, occasion: str = "", mode: str = "") ->
     client = _get_client()
 
     system_prompt = MIRROR_SYSTEM_PROMPT if mode == "mirror" else SYSTEM_PROMPT
-    max_tokens = 800 if mode == "mirror" else 600
+    max_tokens = 1000
 
     img_bytes_io = io.BytesIO()
     img.save(img_bytes_io, format="JPEG", quality=85)
@@ -230,7 +230,7 @@ def get_outfit_feedback(img: Image.Image, occasion: str = "", mode: str = "") ->
         response = client.models.generate_content(
             model=settings.GEMINI_MODEL,
             contents=repair_msg,
-            config=types.GenerateContentConfig(max_output_tokens=600, temperature=0.2),
+            config=types.GenerateContentConfig(max_output_tokens=1000, temperature=0.2),
         )
         return _validate_feedback(_parse_llm_json(response.text))
     except Exception as e:
