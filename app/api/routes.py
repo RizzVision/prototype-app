@@ -361,7 +361,9 @@ async def outfit_suggestion(req: OutfitSuggestionRequest):
             f"2. Be warm, encouraging, and specific. Like a friend giving real advice.\n"
             f"3. Keep the whole response under 90 words.\n"
             f"4. Give 2-3 concrete styling tips for the occasion: include key colours, garment types, and one accessory tip.\n"
-            f"5. Do NOT reference any wardrobe — give universal advice.\n\n"
+            f"5. Do NOT reference any wardrobe — give universal advice.\n"
+            f"6. CRITICAL: Start your response directly with the outfit advice, not a greeting or question. "
+            f"   Do NOT open with 'Hey', 'Hi', 'Ready to', or any question. Jump straight into the styling tip.\n\n"
             f"Give general outfit advice for a {req.occasion} occasion."
         )
     else:
@@ -378,7 +380,9 @@ async def outfit_suggestion(req: OutfitSuggestionRequest):
             f"5. Give exactly 1 outfit combination if the wardrobe is small (under 4 items), "
             f"   or 2 combinations if there are 4 or more items.\n"
             f"6. Each combination is ONE sentence naming the exact wardrobe items.\n"
-            f"7. End with one short sentence on why it works for the occasion.\n\n"
+            f"7. End with one short sentence on why it works for the occasion.\n"
+            f"8. CRITICAL: Start your response directly with the outfit combination, not a greeting or question. "
+            f"   Do NOT open with 'Hey', 'Hi', 'Ready to', or any question. Jump straight into the outfit suggestion.\n\n"
             f"Occasion: {req.occasion}{anchor_line}\n\n"
             f"Wardrobe (use these exact names):\n{req.wardrobe}"
         )
