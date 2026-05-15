@@ -45,7 +45,9 @@ export default function ShoppingScreen() {
     const item = analysis.speech_segments?.find((s) => s.id === "item")?.text;
     const match = analysis.speech_segments?.find((s) => s.id === "match")?.text;
     const verdict = analysis.speech_segments?.find((s) => s.id === "verdict")?.text;
-    return [item, match, verdict].filter(Boolean).join("  ");
+    const occasions = analysis.speech_segments?.find((s) => s.id === "occasions")?.text;
+    const archetypes = analysis.speech_segments?.find((s) => s.id === "archetypes")?.text;
+    return [item, match, verdict, occasions, archetypes].filter(Boolean).join("  ");
   }, []);
 
   const speakAnalysisIfNew = useCallback((analysis) => {

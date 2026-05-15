@@ -16,7 +16,7 @@ const MIN_WARDROBE_FOR_PAIRING = 5;
 
 export default function OutfitScreen() {
   const { language } = useLocale();
-  const { navParams, navigate } = useApp();
+  const { navParams, navigate, descriptionMode, toggleDescriptionMode } = useApp();
   const { speak } = useVoice();
   const { announce, LiveRegions } = useAnnounce();
   const { items } = useWardrobe();
@@ -252,8 +252,14 @@ export default function OutfitScreen() {
       >
         <p style={{
           fontFamily: FONT, fontSize: 18, color: C.text, lineHeight: 1.8, margin: 0,
-        }}>{result}</p>
+        }}>{descriptionMode === "short" ? result.split(/(?<=[.!?])\s+/).slice(0, 2).join(" ") : result}</p>
       </div>
+      <BigButton
+        label={descriptionMode === "short" ? "Full Description" : "Brief Description"}
+        hint={descriptionMode === "short" ? "Hear the complete outfit suggestion" : "Hear a shorter summary"}
+        icon={descriptionMode === "short" ? "📋" : "🔊"}
+        onClick={toggleDescriptionMode}
+      />
 
       {outfitChatContext && (
         <ContextChat

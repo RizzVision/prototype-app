@@ -46,7 +46,7 @@ export default function ScanScreen() {
 
   useEffect(() => {
     if (phase !== "naming" || !scanResult?.short_description) return;
-    const longDesc = [scanResult.short_description, scanResult.color, scanResult.category].filter(Boolean).join(". ");
+    const longDesc = [scanResult.short_description, scanResult.color, scanResult.category].filter(Boolean).map(s => s.replace(/[.\s]+$/, "")).join(". ") + ".";
     const desc = descriptionMode === "short" ? scanResult.short_description : longDesc;
     speak(desc);
     announce(desc, "polite");
@@ -264,7 +264,7 @@ export default function ScanScreen() {
       )}
 
       {scanResult?.short_description && (() => {
-        const longDesc = [scanResult.short_description, scanResult.color, scanResult.category].filter(Boolean).join(". ");
+        const longDesc = [scanResult.short_description, scanResult.color, scanResult.category].filter(Boolean).map(s => s.replace(/[.\s]+$/, "")).join(". ") + ".";
         const displayDesc = descriptionMode === "short" ? scanResult.short_description : longDesc;
         return (
           <>

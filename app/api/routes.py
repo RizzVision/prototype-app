@@ -127,8 +127,8 @@ async def shopping_analyze(
         )
 
     prompt = f"""You are RizzVision in shopping mode, speaking to a visually impaired user.
-Your response is read aloud. Every sentence must be under 15 words. No markdown. No lists.
-Use concrete, tactile language. Never say "looks good" — say WHY.
+Your response is read aloud. Be concise but descriptive — aim for 2-3 sentences per section. No markdown. No lists.
+Use concrete, tactile language. Never say "looks good" — say WHY (specific colour, cut, texture, fit).
 Respond in the language with ISO code: {locale}.
 
 {wardrobe_section}
@@ -189,6 +189,12 @@ Return ONLY valid JSON:
         speech_segments.append({"id": "match", "text": data["wardrobe_match"]})
     if data.get("buy_verdict"):
         speech_segments.append({"id": "verdict", "text": data["buy_verdict"]})
+    if data.get("suitable_occasions"):
+        occasions_text = "Best for: " + ", ".join(data["suitable_occasions"]) + "."
+        speech_segments.append({"id": "occasions", "text": occasions_text})
+    if data.get("top_archetypes"):
+        archetypes_text = "Style vibe: " + " and ".join(data["top_archetypes"]) + "."
+        speech_segments.append({"id": "archetypes", "text": archetypes_text})
 
     analysis_context = (
         f"Assessment: {data.get('item_description', '')} {data.get('wardrobe_match', '')}"
@@ -380,7 +386,7 @@ async def outfit_suggestion(req: OutfitSuggestionRequest):
     response = client.models.generate_content(
         model=settings.GEMINI_MODEL,
         contents=prompt,
-        config=types.GenerateContentConfig(max_output_tokens=250, temperature=0.7),
+        config=types.GenerateContentConfig(max_output_tokens=400, temperature=0.7),
     )
     return {"suggestion": response.text}
 
@@ -787,7 +793,7 @@ CRITICAL RULES:
                 gtypes.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
                 prompt,
             ],
-            config=gtypes.GenerateContentConfig(max_output_tokens=300, temperature=0.3),
+            config=gtypes.GenerateContentConfig(max_output_tokens=400, temperature=0.3),
         )
         text = response.text.strip()
         if text.startswith("```"):
@@ -802,10 +808,20 @@ CRITICAL RULES:
             "color": "",
         }
 
+    _FALLBACK_DESC = "Could not identify the item clearly. Please retake the photo in good lighting."
+    _BAD_PHRASES = ["i can see", "clothing item", "i see a", "i can observe", "the image shows"]
+    desc = data.get("short_description", "")
+    if not desc or len(desc.split()) < 10 or any(p in desc.lower() for p in _BAD_PHRASES):
+        data["short_description"] = _FALLBACK_DESC
+    name = data.get("suggested_name", "")
+    _GENERIC_NAMES = {"clothing item", "item", "top", "shirt", "pants", "scanned item", "clothing"}
+    if not name or name.lower().strip() in _GENERIC_NAMES:
+        data["suggested_name"] = "Scanned Item"
+
     return {
-        "suggested_name": data.get("suggested_name", "Clothing Item"),
+        "suggested_name": data.get("suggested_name", "Scanned Item"),
         "category": data.get("category", "tops"),
-        "short_description": data.get("short_description", ""),
+        "short_description": data.get("short_description", _FALLBACK_DESC),
         "color": data.get("color", ""),
     }
 
