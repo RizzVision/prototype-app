@@ -68,8 +68,6 @@ function pickBestVoice(speechLocale = "en-IN") {
   return (
     voices.find((v) => v.lang.toLowerCase() === speechLocale.toLowerCase()) ??
     voices.find((v) => v.lang.toLowerCase().startsWith(`${language}-`)) ??
-    voices.find((v) => v.lang.toLowerCase().startsWith("en-")) ??
-    voices[0] ??
     null
   );
 }
