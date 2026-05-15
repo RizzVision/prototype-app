@@ -150,7 +150,7 @@ Return ONLY valid JSON:
 }}"""
 
     img_bytes_io = _io.BytesIO()
-    img.save(img_bytes_io, format="JPEG", quality=85)
+    img.save(img_bytes_io, format="JPEG", quality=92)
     img_b64 = _b64.b64encode(img_bytes_io.getvalue()).decode()
 
     groq_client = Groq(api_key=settings.GROQ_API_KEY)
@@ -263,7 +263,7 @@ Respond in the language with ISO code: {locale}.
 Return ONLY valid JSON: {{"verdict": "works|clashes|style_tip_only", "reason": "string"}}"""
 
     img_bytes_io = _io.BytesIO()
-    img.save(img_bytes_io, format="JPEG", quality=75)
+    img.save(img_bytes_io, format="JPEG", quality=92)
     img_b64 = _b64.b64encode(img_bytes_io.getvalue()).decode()
 
     groq_client = Groq(api_key=settings.GROQ_API_KEY)
@@ -528,10 +528,8 @@ async def identify_item(req: IdentifyItemRequest):
         from PIL import Image
         import io as _io
         img = Image.open(_io.BytesIO(img_bytes)).convert("RGB")
-        # Downscale for speed — identify doesn't need full res
-        img.thumbnail((640, 640))
         buf = _io.BytesIO()
-        img.save(buf, format="JPEG", quality=80)
+        img.save(buf, format="JPEG", quality=90)
         img_bytes = buf.getvalue()
     except Exception:
         return {
@@ -788,7 +786,7 @@ CRITICAL RULES:
 - category: choose the single best fit from the 5 options only."""
 
     img_bytes_io = _io.BytesIO()
-    img.save(img_bytes_io, format="JPEG", quality=80)
+    img.save(img_bytes_io, format="JPEG", quality=92)
     img_bytes = img_bytes_io.getvalue()
 
     try:
@@ -869,7 +867,7 @@ async def describe_frame(
     )
 
     img_bytes_io = _io.BytesIO()
-    img.save(img_bytes_io, format="JPEG", quality=75)
+    img.save(img_bytes_io, format="JPEG", quality=92)
     img_bytes = img_bytes_io.getvalue()
 
     response = client.models.generate_content(

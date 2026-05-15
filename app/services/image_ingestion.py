@@ -65,11 +65,6 @@ def ingest_image(raw_bytes: bytes) -> Image.Image:
             user_message="This image is extremely large. Please use a standard photo from your camera.",
         )
 
-    # Resize to target size on longest side
-    img.thumbnail(
-        (settings.IMAGE_TARGET_SIZE, settings.IMAGE_TARGET_SIZE), Image.LANCZOS
-    )
-
     logger.info(f"Image ingested: {img.size[0]}x{img.size[1]}")
     return img
 

@@ -189,7 +189,7 @@ def get_outfit_feedback(img: Image.Image, occasion: str = "", mode: str = "") ->
     max_tokens = 800
 
     img_bytes_io = io.BytesIO()
-    img.save(img_bytes_io, format="JPEG", quality=85)
+    img.save(img_bytes_io, format="JPEG", quality=92)
     img_bytes = img_bytes_io.getvalue()
 
     occasion_line = (
