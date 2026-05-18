@@ -5,7 +5,9 @@ Entry point for the FastAPI application.
 Run with: uvicorn main:app --reload
 """
 
+import asyncio
 import logging
+from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI
@@ -18,6 +20,7 @@ from app.errors.handlers import (
     generic_error_handler,
 )
 from app.services.image_ingestion import ImageQualityError
+from app.services import tts_service
 
 # Configure logging
 logging.basicConfig(
@@ -27,11 +30,21 @@ logging.basicConfig(
 )
 logger = logging.getLogger("rizzvision")
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Pre-load Kokoro pipelines so the first /tts request isn't slow
+    await asyncio.to_thread(tts_service.warmup)
+    logger.info("TTS warmup complete.")
+    yield
+
+
 # Create FastAPI app
 app = FastAPI(
     title="RizzVision",
     description="AI-Powered Outfit Analysis for Visually Impaired Users",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 # CORS middleware for frontend integration

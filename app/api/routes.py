@@ -10,9 +10,12 @@ All analysis is LLM-driven. The pipeline is:
 
 import logging
 import time
+from typing import Optional
 
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Response
 from pydantic import BaseModel
+
+from app.services import tts_service
 
 from app.errors.handlers import ERROR_MESSAGES
 from app.services.image_ingestion import ImageQualityError, ingest_image, check_image_quality
@@ -909,3 +912,23 @@ async def describe_frame(
     logger.info(f"Describe frame in {latency_ms}ms | locale={locale}")
 
     return {"description": description, "latency_ms": latency_ms}
+
+
+@router.post("/tts")
+async def text_to_speech(
+    text: str = Form(...),
+    language: Optional[str] = Form("en"),
+):
+    """
+    Returns WAV audio for the given text.
+    en/hi → Kokoro neural voice
+    ta    → espeak-ng (Kokoro has no Tamil support)
+    """
+    try:
+        wav_bytes = tts_service.generate(text, language or "en")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"TTS failed: {exc}")
+
+    return Response(content=wav_bytes, media_type="audio/wav")
